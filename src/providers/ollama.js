@@ -258,6 +258,15 @@ export async function chat({ systemInstruction, prompt, temperature, maxOutputTo
   if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
   messages.push({ role: 'user', content: prompt });
 
+  // NB: no trailing assistant turn here. Prefilling one is the textbook way to
+  // constrain a small model and it was tried first — it makes this model emit a
+  // literal "<s>" and nothing else, because Ollama renders the turn through
+  // sarvam-1's chatml template and the model then continues from the template's
+  // own boundary token. Priming at the end of the user message (config
+  // .generation.prefill, appended in prompts.js) achieves the same constraint and
+  // works. Keeping the priming text there also means it cannot be forgotten by a
+  // caller who forgets this provider.
+
   const data = await postJson(
     '/api/chat',
     {
@@ -268,6 +277,8 @@ export async function chat({ systemInstruction, prompt, temperature, maxOutputTo
         num_ctx: config.ollama.numCtx,
         temperature: temperature ?? config.generation.temperature,
         num_predict: maxOutputTokens ?? config.generation.maxOutputTokens,
+        top_p: config.generation.topP,
+        repeat_penalty: config.generation.repeatPenalty,
       },
     },
     { label: 'chat' }
@@ -277,7 +288,7 @@ export async function chat({ systemInstruction, prompt, temperature, maxOutputTo
   if (typeof text !== 'string' || !text.trim()) {
     throw new Error(`Ollama chat returned no content: ${JSON.stringify(data).slice(0, 200)}`);
   }
-  return text;
+  return text.trim();
 }
 
 export const name = 'ollama';

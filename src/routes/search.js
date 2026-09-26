@@ -21,11 +21,17 @@ searchRouter.get('/search', async (req, res) => {
     : config.retrieval.threshold;
 
   try {
-    const { query, passages } = await searchOnly(q, { topK, threshold });
+    const { query, passages, topSimilarity, band } = await searchOnly(q, { topK, threshold });
     return res.json({
       query,
       topK,
       threshold,
+      // Which band the answer path would have chosen, and the score it decided on.
+      // Previously this endpoint returned only the filtered list, so the near
+      // misses that explain a refusal were invisible and the threshold looked
+      // arbitrary when tuning it.
+      band,
+      topSimilarity,
       count: passages.length,
       results: passages.map((p, i) => ({
         rank: i + 1,

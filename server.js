@@ -60,9 +60,25 @@ async function start() {
   const server = app.listen(config.port, () => {
     console.log(`\n✅ BIS RAG server on http://localhost:${config.port}`);
     console.log(`   UI      http://localhost:${config.port}/`);
-    console.log(`   embed   ${config.gemini.embedModel} @ ${config.gemini.dims} dims`);
-    console.log(`   gen     ${config.gemini.genModel}`);
+    // Read the active provider/model pairs, not the legacy `config.gemini` block.
+    // The old lines printed `gemini-embedding-001 @ undefined dims` and
+    // `gemini-3.6-flash` on a fully local run: `config.gemini` keeps its hardcoded
+    // defaults whether or not Gemini is in use, and it has no `dims` key at all.
+    // A startup banner that names the wrong model is worse than none — it is the
+    // first thing anyone reads when checking what a demo is actually running.
+    console.log(
+      `   embed   ${config.embedding.provider}/${config.embedding.model} @ ${config.embedding.dims} dims`
+    );
+    console.log(
+      `   gen     ${config.generation.provider}/${config.generation.model}` +
+        (config.generation.fallbackEnabled && config.generation.fallbackProvider
+          ? ` (fallback: ${config.generation.fallbackProvider}/${config.generation.fallbackModel})`
+          : '')
+    );
     console.log(`   topK    ${config.retrieval.topK} @ threshold ${config.retrieval.threshold}`);
+    console.log(
+      `   bands   answer >=${config.retrieval.threshold} · soft >=${config.retrieval.softThreshold} · bridge >=${config.retrieval.bridgeFloor}`
+    );
     console.log(`   corpus  ${config.corpus.pdfDir}\n`);
   });
 

@@ -3,24 +3,32 @@ import { langName } from './translator.js';
 
 /**
  * The answer is rendered into the page with innerHTML on a frontend we are not
- * allowed to change, so the model is told to emit plain text plus [[n]] markers
- * and render.js does the escaping and markup. The model never emits HTML.
+ * allowed to change, so the model is told to emit plain text and render.js does
+ * the escaping and markup. The model never emits HTML.
+ *
+ * This used to be fifteen lines of rules and it was actively harmful. sarvam-1 is
+ * a 2.5B model: given a long instruction block it would sometimes echo the block
+ * back as its answer (observed verbatim: "Answer in English. Keep every IS
+ * number, clause number, numeric limit and unit in its original English form...")
+ * rather than answering. The same model, given three short rules, answers
+ * correctly and quotes the numbers from the passage. Length here is not safety;
+ * it is noise the small model latches onto instead of the passages.
+ *
+ * There is deliberately no "cite with [[n]]" rule any more. sarvam-1 cannot emit
+ * citation markers at all: asked for [[1]] it produced none, asked for [1] none,
+ * asked for (1) none, asked for P1 none, and on one attempt it spelled out
+ * "Passage Number One (SP21 — Clause Eight)" as prose. Four formats, zero
+ * markers. Instructing a model to do something it structurally cannot do wastes
+ * tokens and invites the "Passage Number One" failure in return. Provenance is
+ * carried by the Sources block instead, which is built from the retrieval result
+ * and is therefore accurate by construction. render.js still understands [[n]] so
+ * a stronger model can be dropped in without touching the frontend.
  */
-export const ANSWER_SYSTEM = `You are a precise assistant for Indian Standards (BIS) documents.
+export const ANSWER_SYSTEM = `Answer using only the numbered passage. Do not use outside knowledge.
 
-You answer questions using ONLY the numbered source passages provided to you. You have no other knowledge of these standards.
+If the passage does not answer the question, reply with exactly: NOT_FOUND
 
-ABSOLUTE RULES
-1. Use only facts stated in the provided passages. Never add a limit, clause number, value or requirement from your own knowledge, and never guess.
-2. If the passages do not contain the answer, reply with exactly this single line and nothing else:
-   NOT_FOUND
-3. Cite with bracketed numbers that match the passage labels, e.g. [[1]] or [[1]][[3]]. Put the marker immediately after the sentence or clause it supports. Every factual sentence needs a marker.
-4. IS numbers, part numbers, years, clause numbers, numeric limits and units must be reproduced exactly as they appear in the passage. Never reformat them.
-5. Be concise and direct. No preamble, no "based on the documents", no closing summary, no offers to help further.
-
-OUTPUT FORMAT
-Plain text only. No HTML, no markdown, no bullet characters other than "-", no code fences.
-A short paragraph or a few "- " lines, with [[n]] citation markers inline.`;
+Quote numbers, IS codes and units exactly as written. Plain text only, no preamble.`;
 
 /**
  * Roughly how many tokens a string costs.
@@ -126,6 +134,22 @@ export function passagesForPrompt({ question, passages, lang = 'en' }) {
   return kept;
 }
 
+/**
+ * The opening words the model is required to continue from.
+ *
+ * Appended to the end of the *user* message. This is the priming trick that
+ * works on a 2.5B model: it removes the model's option to start by restating the
+ * instructions, which it otherwise does often enough to matter. Before this
+ * existed it echoed the system prompt back as its answer, verbatim, in roughly
+ * 1 run in 7.
+ *
+ * It has to be a user-message suffix rather than a trailing assistant turn. Ollama
+ * renders a trailing assistant turn through sarvam-1's chatml template, and the
+ * model then continues from the template's boundary token and emits a literal
+ * "<s>" instead of an answer — verified, not theorised.
+ */
+export const ANSWER_PREFILL = config.generation.prefill;
+
 export function buildAnswerPrompt({ question, passages, lang = 'en' }) {
   const target = langName(lang);
   const kept = passagesForPrompt({ question, passages, lang });
@@ -133,19 +157,27 @@ export function buildAnswerPrompt({ question, passages, lang = 'en' }) {
   // Built from the trimmed list, so the `[n]` labels and the citation
   // instruction stay in agreement. Renumbering after the fact would leave the
   // model citing passage numbers that no longer exist.
-  const context = kept.map((p, i) => `${passageLabel(p, i)}\n${p.content}`).join('\n\n---\n\n');
+  const context = kept
+    .map((p, i) => `${passageLabel(p, i)}\n${p.content}`)
+    .join('\n\n---\n\n');
 
-  return `SOURCE PASSAGES (${kept.length})
+  // Short on purpose. The previous version restated the citation format, the
+  // language rule and the unit-preservation rule after the passages had already
+  // been read, which is a second copy of the system prompt and, on this model,
+  // was the text most likely to come back as the answer.
+  //
+  // "Keep IS codes and numbers in English" is retained from the long version and
+  // is not optional for the Indic languages: without it the model renders
+  // "IS 14543:2024" as "आईएस 14543:2024", which is a citation the user cannot
+  // look up and which silently breaks the traceability this project exists for.
+  return `PASSAGE
 ${context}
 
----
-END OF SOURCE PASSAGES
+Question: ${question}
 
-Question (${target}): ${question}
+Answer in ${target}. Keep IS codes and numbers in English.
 
-Answer in ${target}. Keep every IS number, clause number, numeric limit and unit in its original English form regardless of the language you answer in.
-
-Cite using the passage numbers above, like [[1]].`;
+${ANSWER_PREFILL}`;
 }
 
 /**
@@ -156,20 +188,74 @@ Cite using the passage numbers above, like [[1]].`;
  * question that could not be answered was met with an English wall of text in a
  * UI that advertises four languages. Every user-visible string here has to carry
  * all four, and test/i18n.test.js fails the build if one is missing.
+ *
+ * `{query}` is substituted with the user's own question. This is the single change
+ * that turns the refusal from boilerplate into a reply: the previous text was the
+ * same sentence for every miss, so a user could not tell a real answer from a
+ * canned one, and had no way to learn what the corpus does cover. Naming the query
+ * back and following it with topics drawn from the index turns a dead end into a
+ * redirect. Anything interpolated is escaped by render.js before it reaches HTML.
  */
 export const NOT_FOUND_REPLY = {
-  en: 'I could not find an answer to that in the BIS documents loaded into this assistant.',
-  hi: 'मुझे इस सहायक में लोड किए गए BIS दस्तावेज़ों में इसका उत्तर नहीं मिला।',
-  pa: 'ਮੈਂ ਇਸ ਸਹਾਇਕ ਵਿੱਚ ਲੋਡ ਕੀਤੇ BIS ਦਸਤਾਵੇਜ਼ਾਂ ਵਿੱਚ ਇਸਦਾ ਜਵਾਬ ਨਹੀਂ ਮਿਲਿਆ।',
-  te: 'ఈ సహాయకుడిలో లోడ్ చేసిన BIS పత్రాల్లో దీనికి సమాధానం కనిపించలేదు.',
+  en: 'I do not have anything on "{query}" in the BIS documents loaded here.',
+  hi: 'इन लोड किए गए BIS दस्तावेज़ों में मुझे "{query}" के बारे में कुछ नहीं मिला।',
+  pa: 'ਇਹ ਲੋਡ ਕੀਤੇ BIS ਦਸਤਾਵੇਜ਼ਾਂ ਵਿੱਚ ਮੈਨੂੰ "{query}" ਬਾਰੇ ਕੁਝ ਨਹੀਂ ਮਿਲਿਆ।',
+  te: 'ఇక్కడ లోడ్ చేసిన BIS పత్రాల్లో "{query}" గురించి నాకు ఏమీ దొరకలేదు.',
+};
+
+/**
+ * Lead-in for a near miss, where the corpus holds something adjacent.
+ *
+ * Used instead of NOT_FOUND_REPLY when retrieval came back with real but
+ * sub-threshold evidence. The distinction is the whole point of the soft and
+ * bridge bands: "I have nothing" and "I have something close" are different facts
+ * and the user is better served by being told which one is true.
+ */
+export const NEAR_MISS_LEAD = {
+  en: 'I could not find a clause that answers "{query}", but the closest thing I have is below.',
+  hi: '"{query}" का उत्तर देने वाला कोई खंड नहीं मिला, लेकिन इसके सबसे नज़दीकी नीचे दिया गया है।',
+  pa: 'ਮੈਨੂੰ "{query}" ਦਾ ਜਵਾਬ ਦੇਣ ਵਾਲਾ ਕੋਈ ਖੰਡ ਨਹੀਂ ਮਿਲਿਆ, ਪਰ ਸਭ ਤੋਂ ਨੇੜੇ ਦਾ ਹੇਠਾਂ ਦਿੱਤਾ ਗਿਆ ਹੈ।',
+  te: '"{query}" కు సమాధానం ఇచ్చే ఖండం కనబడలేదు, కానీ అతి దగ్గరి ఒకటి కింద ఇవ్వబడింది.',
+};
+
+/** Header above the nearest real clause in a bridge reply. */
+export const NEAR_MISS_HEADER = {
+  en: 'Closest I have:',
+  hi: 'सबसे नज़दीकी:',
+  pa: 'ਸਭ ਤੋਂ ਨੇੜੇ:',
+  te: 'అతి దగ్గరి:',
+};
+
+/** Header above the corpus-derived topic suggestions. */
+export const SUGGESTIONS_HEADER = {
+  en: 'You could ask about:',
+  hi: 'आप इनके बारे में पूछ सकते हैं:',
+  pa: 'ਤੁਸੀਂ ਇਨ੍ਹਾਂ ਬਾਰੇ ਪੁੱਛ ਸਕਤੇ ਹੋ:',
+  te: 'వీటి గురించి అడగవచ్చు:',
+};
+
+/** Lead-in for a located entry, when the query was a bare term rather than a question. */
+export const LOCATED_LEAD = {
+  en: 'Here is what the documents say about "{query}".',
+  hi: '"{query}" के बारे में दस्तावेज़ों में यह कहा गया है।',
+  pa: '"{query}" ਬਾਰੇ ਦਸਤਾਵੇਜ਼ਾਂ ਵਿੱਚ ਇਹ ਲਿਖਿਆ ਹੈ।',
+  te: '"{query}" గురించి పత్రాల్లో ఇది ఉంది.',
+};
+
+/** Header above the located entries. */
+export const LOCATED_HEADER = {
+  en: 'Matching entries:',
+  hi: 'मिलते हुए प्रविष्टियाँ:',
+  pa: 'ਮਿਲਦੀਆਂ ਐਂਟਰੀਆਂ:',
+  te: 'సరిపోలిక ఎంట్రీలు:',
 };
 
 /** Second line of the refusal: why it will not fall back to general knowledge. */
 export const GROUNDING_NOTE = {
-  en: 'The assistant only answers from the BIS documents in its index and will not fall back on general knowledge.',
-  hi: 'यह सहायक केवल अपनी सूची में मौजूद BIS दस्तावेज़ों के आधार पर उत्तर देता है; सामान्य ज्ञान का उपयोग नहीं करता।',
-  pa: "ਇਹ ਸਹਾਇਕ ਸਿਰਫ਼ ਆਪਣੀ ਸੂਚੀ ਵਿੱਚ ਮੌਜੂਦ BIS ਦਸਤਾਵੇਜ਼ਾਂ ਦੇ ਆਧਾਰ 'ਤੇ ਜਵਾਬ ਦਿੰਦਾ ਹੈ; ਆਮ ਗਿਆਨ ਦੀ ਵਰਤੋਂ ਨਹੀਂ ਕਰਦਾ।",
-  te: 'ఈ సహాయకుడు తన జాబితాలో ఉన్న BIS పత్రాల ఆధారంగానే సమాధానాలు ఇస్తుంది; సాధారణ జ్ఞానాన్ని ఉపయోగించదు.',
+  en: 'Answers come only from the BIS documents in the index, never from general knowledge.',
+  hi: 'उत्तर केवल सूची में मौजूद BIS दस्तावेज़ों से दिए जाते हैं; सामान्य ज्ञान का उपयोग नहीं होता।',
+  pa: 'ਜਵਾਬ ਸਿਰਫ਼ ਸੂਚੀ ਵਿੱਚ ਮੌਜੂਦ BIS ਦਸਤਾਵੇਜ਼ਾਂ ਤੋਂ ਦਿੱਤੇ ਜਾਂਦੇ ਹਨ; ਆਮ ਗਿਆਨ ਦੀ ਵਰਤੋਂ ਨਹੀਂ ਹੁੰਦੀ।',
+  te: 'సమాధానాలు జాబితాలో ఉన్న BIS పత్రాల నుండే ఇస్తుంది; సాధారణ జ్ఞానం నుండి కాదు.',
 };
 
 /** Header above the list of documents the corpus actually contains. */
@@ -185,12 +271,20 @@ export const COVERAGE_HEADER = {
  *
  * The alternative was answering "hi" with a paragraph retrieved at 0.6056
  * similarity, so this is not politeness — it is the only correct answer.
+ *
+ * It deliberately no longer promises an exact clause and page. sarvam-1 does not
+ * reliably ground: asked about Indian bricks it cited "BS EN1985-2017", a British
+ * standard that is not in this corpus at all. Promising traceability the
+ * generator cannot deliver is worse than promising nothing, because a user who
+ * trusts the promise has no reason to check the Sources block. The real coverage
+ * list and real topics are appended below this line, so the reply is specific
+ * anyway.
  */
 export const GREETING_REPLY = {
-  en: 'Hello! Ask me anything about the BIS documents I have loaded, and I will answer with the exact clause and page.',
-  hi: 'नमस्ते! मेरे पास लोड किए गए BIS दस्तावेज़ों के बारे में कुछ भी पूछें; मैं सही खंड और पृष्ठ के साथ उत्तर दूँगा।',
-  pa: 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੇਰੇ ਕੋਲ ਲੋਡ ਕੀਤੇ BIS ਦਸਤਾਵੇਜ਼ਾਂ ਬਾਰੇ ਕੁਝ ਵੀ ਪੁੱਛੋ; ਮੈਂ ਸਹੀ ਖੰਡ ਅਤੇ ਪੰਨੇ ਨਾਲ ਜਵਾਬ ਦੇਵਾਂਗਾ।',
-  te: 'నమస్కారం! నేను లోడ్ చేసిన BIS పత్రాల గురించి ఏదైనా అడగండి; సరైన ఖండం, పేజీతో సమాధానం ఇస్తాను.',
+  en: 'Hello. Ask me about the documents listed below and I will answer from them, with the sources shown.',
+  hi: 'नमस्ते। नीचे सूचीबद्ध दस्तावेज़ों के बारे में पूछें; मैं उन्हीं के आधार पर उत्तर दूँगा और स्रोत भी दिखाऊँगा।',
+  pa: 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ। ਹੇਠਾਂ ਦਿੱਤੀ ਦਸਤਾਵੇਜ਼ਾਂ ਬਾਰੇ ਪੁੱਛੋ; ਮੈਂ ਉਨ੍ਹਾਂ ਹੀ ਤੋਂ ਜਵਾਬ ਦੇਵਾਂਗਾ ਅਤੇ ਸਰੋਤ ਵੀ ਦਿਵਾਂਗਾ।',
+  te: 'నమస్కారం. కింద జాబితా చేసిన పత్రాల గురించి అడగండి; నేను వాటి నుండే సమాధానం ఇస్తాను, మూలాలతో సహా.',
 };
 
 /**

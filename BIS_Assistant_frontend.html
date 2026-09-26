@@ -3,474 +3,619 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BIS Intelligent Assistant</title>
+<title>BIS Standards Assistant</title>
 <style>
-    /* ALL YOUR EXISTING CSS REMAINS EXACTLY THE SAME */
+    /* Flat, plain, document-first. No gradients, no shadows, no rounded pills,
+       no avatars, no animation. The things that were removed are listed at the
+       bottom of this block with the reason for each. */
     :root {
-        --primary: #123b78; --primary-light: #edf3ff; --accent: #1a56b5;
-        --accent-hover: #102f5e; --sidebar-bg: #102f5e; --sidebar-hover: #1e4d8c;
-        --bg-color: #f4f7f9; --text-main: #2c3e50; --text-muted: #7f8c8d;
-        --border: #e2e8f0; --success: #10b981; --bubble-user: #123b78;
-        --bubble-ai: #ffffff; --radius-lg: 16px; --radius-md: 12px; --radius-sm: 8px;
+        --ink: #1a1a1a;
+        --ink-soft: #555;
+        --ink-faint: #777;
+        --rule: #d8d8d8;
+        --rule-soft: #ececec;
+        --page: #ffffff;
+        --panel: #fafafa;
+        --link: #12507d;
+        --warn: #8a5300;
+        --warn-bg: #fdf6e8;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg-color); color: var(--text-main); -webkit-font-smoothing: antialiased; }
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-    .header { height: 72px; background: #ffffff; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 32px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
-    .brand { display: flex; align-items: center; gap: 12px; }
-    .logo { width: 40px; height: 40px; background: var(--primary); color: white; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; letter-spacing: 0.5px; }
-    .brand-text h1 { font-size: 16px; color: var(--primary); font-weight: 600; }
-    .brand-text p { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-    .header-actions { display: flex; align-items: center; gap: 16px; }
-    .lang-switcher { padding: 8px 12px; border: 2px solid var(--primary-light); border-radius: var(--radius-sm); background: #ffffff; font-size: 13px; font-weight: 600; color: var(--primary); cursor: pointer; outline: none; transition: 0.2s; }
-    .lang-switcher:hover, .lang-switcher:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
-    .layout { display: flex; height: calc(100vh - 72px); }
-    .sidebar { width: 260px; background: var(--sidebar-bg); color: white; padding: 24px 16px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
-    .sidebar-title { font-size: 11px; color: #8ba6d4; text-transform: uppercase; margin: 8px 12px 12px; letter-spacing: 1px; font-weight: 600; }
-    .nav-item { padding: 10px 14px; border-radius: var(--radius-sm); cursor: pointer; color: #dbe7f8; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 12px; transition: 0.2s; }
-    .nav-item:hover { background: var(--sidebar-hover); color: white; }
-    .nav-item.active { background: var(--sidebar-hover); color: white; }
-    .nav-item svg { width: 18px; height: 18px; fill: currentColor; opacity: 0.7; }
-    .nav-item:hover svg, .nav-item.active svg { opacity: 1; }
-    .content { flex: 1; padding: 32px; max-width: 1400px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; overflow-y: auto; }
-    .welcome-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; flex-shrink: 0; }
-    .welcome-bar h2 { font-size: 24px; color: #1e293b; font-weight: 600; letter-spacing: -0.5px;}
-    .welcome-bar p { color: var(--text-muted); font-size: 14px; margin-top: 6px; }
-    .status-badge { display: flex; align-items: center; gap: 8px; background: white; border: 1px solid var(--border); padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
-    .status-dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; box-shadow: 0 0 6px rgba(16, 185, 129, 0.4); }
-    .dashboard { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; flex: 1; min-height: 0;  }
-    .chat-container { background: white; border: 1px solid var(--border); border-radius: var(--radius-lg); display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0,0,0,0.03); overflow: hidden; }
-    .chat-messages { flex: 1; padding: 24px; overflow-y: auto; scroll-behavior: smooth; }
-    .message { display: flex; gap: 12px; margin-bottom: 24px; animation: fadeIn 0.3s ease; }
-    .message.user { justify-content: flex-end; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-    .msg-icon { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; flex-shrink: 0; }
-    .user .msg-icon { background: var(--primary-light); color: var(--primary); }
-    .ai .msg-icon { background: var(--primary); color: white; }
-    .msg-bubble { max-width: 75%; padding: 14px 18px; font-size: 14px; line-height: 1.6; border-radius: var(--radius-md); }
-    .ai .msg-bubble { background: var(--bubble-ai); border: 1px solid var(--border); color: var(--text-main); border-top-left-radius: 4px; }
-    .user .msg-bubble { background: var(--bubble-user); color: white; border-top-right-radius: 4px; }
-    .typing-indicator { display: flex; gap: 5px; padding: 6px 4px; align-items: center; }
-    .dot { width: 6px; height: 6px; background: #94a3b8; border-radius: 50%; animation: blink 1.4s infinite; }
-    .dot:nth-child(2) { animation-delay: 0.2s; }
-    .dot:nth-child(3) { animation-delay: 0.4s; }
-    @keyframes blink { 0%, 80%, 100% { opacity: 0.4; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1.2); } }
-    .chat-input-wrapper { padding: 16px 24px; border-top: 1px solid var(--border); background: white; }
-    .chat-input-area { display: flex; gap: 8px; align-items: center; background: #f8fafc; border: 1px solid var(--border); border-radius: 24px; padding: 6px 6px 6px 16px; transition: 0.2s; }
-    .chat-input-area:focus-within { border-color: var(--primary); background: white; box-shadow: 0 0 0 3px var(--primary-light); }
-    .chat-input-area input[type="text"] { flex: 1; border: none; background: transparent; outline: none; font-size: 14px; padding: 8px 0; color: var(--text-main); }
-    .tool-btn { width: 36px; height: 36px; border: none; border-radius: 50%; background: transparent; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
-    .tool-btn:hover { background: var(--primary-light); color: var(--primary); }
-    .tool-btn svg { width: 20px; height: 20px; fill: currentColor; }
-    .send-btn { width: 36px; height: 36px; border: none; border-radius: 50%; background: var(--primary); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
-    .send-btn:hover { background: var(--accent-hover); transform: scale(1.05); }
-    .send-btn svg { width: 16px; height: 16px; fill: currentColor; }
-    @keyframes pulse-record { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
-    .recording { color: #ef4444 !important; animation: pulse-record 1.5s infinite; }
-    .tools-panel { background: white; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px;  display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0,0,0,0.03); }
-    .tools-header { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: var(--primary); }
-    .search-box-wrapper { position: relative; margin-bottom: 20px; flex-shrink: 0; }
-    .search-box-wrapper svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; fill: var(--text-muted); }
-    .search-box-wrapper input { width: 100%; border: 1px solid var(--border); padding: 10px 12px 10px 36px; border-radius: var(--radius-sm); font-size: 13px; outline: none; transition: 0.2s; }
-    .search-box-wrapper input:focus { border-color: var(--primary); }
-    .search-results-container { flex: 1; overflow-y: auto; padding-right: 4px; }
-    .result-card { padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 10px; background: #fafbfc; transition: 0.2s; cursor: pointer; }
-    .result-card:hover { border-color: var(--primary); background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-    .result-card h4 { color: var(--primary); font-size: 13px; margin-bottom: 4px; }
-    .result-card p { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
-    .result-card .rc-sub { font-size: 11px; color: var(--primary); opacity: .75; margin-bottom: 4px; }
-    .result-card p:last-child { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-    .no-results { font-size: 13px; color: var(--text-muted); text-align: center; padding: 20px 0; }
-    @media(max-width: 1024px) { .dashboard { grid-template-columns: 1fr; } .tools-panel { max-height: 350px; } }
-    @media(max-width: 768px) { .sidebar { display: none; } .content { padding: 16px; } .welcome-bar { flex-direction: column; gap: 12px; } }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 15px;
+        line-height: 1.55;
+        color: var(--ink);
+        background: var(--page);
+        -webkit-font-smoothing: antialiased;
+    }
+
+    /* ---- header ---- */
+    header {
+        border-bottom: 1px solid var(--rule);
+        padding: 14px 20px;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+    header h1 { font-size: 17px; font-weight: 600; }
+    header .sub { font-size: 13px; color: var(--ink-faint); margin-top: 2px; }
+    .head-right { display: flex; align-items: center; gap: 14px; }
+    .runtime { font-size: 12px; color: var(--ink-faint); text-align: right; line-height: 1.4; }
+    select {
+        font: inherit; font-size: 13px; padding: 5px 8px;
+        border: 1px solid var(--rule); border-radius: 3px;
+        background: #fff; color: var(--ink); cursor: pointer;
+    }
+    select:focus-visible, button:focus-visible, input:focus-visible, a:focus-visible {
+        outline: 2px solid var(--link); outline-offset: 1px;
+    }
+
+    /* ---- layout ---- */
+    .wrap { display: flex; align-items: flex-start; min-height: calc(100vh - 66px); }
+    aside {
+        width: 268px; flex-shrink: 0;
+        border-right: 1px solid var(--rule);
+        padding: 18px 16px;
+        position: sticky; top: 0; align-self: flex-start;
+        max-height: 100vh; overflow-y: auto;
+    }
+    main { flex: 1; min-width: 0; padding: 20px 24px 120px; }
+
+    .side-h {
+        font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+        color: var(--ink-faint); font-weight: 600; margin-bottom: 8px;
+    }
+    .side-block { margin-bottom: 22px; }
+    .side-list { list-style: none; }
+    .side-list li { margin: 0 0 1px; }
+    .side-btn {
+        display: block; width: 100%; text-align: left;
+        font: inherit; font-size: 13px; line-height: 1.4;
+        background: none; border: none; border-radius: 3px;
+        padding: 5px 7px; cursor: pointer; color: var(--link);
+    }
+    .side-btn:hover { background: var(--panel); text-decoration: underline; }
+    .side-btn .code { color: var(--ink-faint); }
+    .side-input {
+        width: 100%; font: inherit; font-size: 13px; padding: 6px 8px;
+        border: 1px solid var(--rule); border-radius: 3px; background: #fff;
+    }
+    .plain-btn {
+        font: inherit; font-size: 13px; background: none; cursor: pointer;
+        border: 1px solid var(--rule); border-radius: 3px; padding: 5px 10px; color: var(--ink-soft);
+    }
+    .plain-btn:hover { border-color: var(--ink-faint); color: var(--ink); }
+    .side-note { font-size: 12px; color: var(--ink-faint); }
+    .dir-card {
+        border: 1px solid var(--rule-soft); border-radius: 3px;
+        padding: 8px 9px; margin-bottom: 6px; cursor: pointer; background: #fff;
+    }
+    .dir-card:hover { border-color: var(--ink-faint); }
+    .dir-card .t { font-size: 13px; font-weight: 600; }
+    .dir-card .m { font-size: 11px; color: var(--ink-faint); margin: 1px 0 3px; }
+    .dir-card .p { font-size: 12px; color: var(--ink-soft); }
+
+    /* ---- transcript ---- */
+    .turn { padding: 16px 0; border-bottom: 1px solid var(--rule-soft); }
+    .turn:last-child { border-bottom: none; }
+    .q { font-weight: 600; font-size: 15px; }
+    .tag {
+        display: inline-block; font-size: 11px; font-weight: 400;
+        color: var(--ink-faint); border: 1px solid var(--rule);
+        border-radius: 3px; padding: 0 5px; margin-left: 8px; vertical-align: 2px;
+    }
+    .a { margin-top: 8px; }
+    .a p { margin: 0 0 9px; }
+    .a ul, .a ol { margin: 0 0 9px; padding-left: 20px; }
+    .a li { margin: 2px 0; }
+    .a h4 {
+        font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+        color: var(--ink-faint); margin: 12px 0 5px;
+    }
+    .a .cite { font-size: 11px; color: var(--link); }
+    .src {
+        font-size: 12px; color: var(--ink-soft);
+        border-top: 1px solid var(--rule-soft); margin-top: 12px; padding-top: 8px;
+    }
+    .src ol { padding-left: 18px; }
+    .loc {
+        border-left: 2px solid var(--rule); padding: 2px 0 2px 11px; margin: 0 0 11px;
+    }
+    .ask-suggestion {
+        font: inherit; font-size: 13px; background: none; border: none;
+        padding: 0; color: var(--link); cursor: pointer; text-align: left;
+        text-decoration: underline;
+    }
+    .ask-suggestion:hover { text-decoration: none; }
+    .notice {
+        border: 1px solid #e3d3ae; background: var(--warn-bg); color: var(--warn);
+        padding: 9px 11px; border-radius: 3px; font-size: 13px; margin-bottom: 9px;
+    }
+    .thinking { color: var(--ink-faint); font-size: 14px; }
+
+    /* ---- composer ---- */
+    .composer {
+        position: fixed; left: 268px; right: 0; bottom: 0;
+        border-top: 1px solid var(--rule); background: #fff; padding: 12px 24px;
+    }
+    .composer .inner { display: flex; gap: 8px; }
+    .composer input {
+        flex: 1; font: inherit; padding: 8px 10px;
+        border: 1px solid var(--rule); border-radius: 3px; background: #fff;
+    }
+    .composer button {
+        font: inherit; font-size: 14px; padding: 8px 18px; cursor: pointer;
+        background: var(--ink); color: #fff; border: 1px solid var(--ink); border-radius: 3px;
+    }
+    .composer button:disabled { background: #999; border-color: #999; cursor: default; }
+
+    .intro { color: var(--ink-soft); }
+    .intro ul { padding-left: 20px; margin: 6px 0 0; }
+    .intro li { margin: 3px 0; }
+
+    @media (max-width: 860px) {
+        aside { display: none; }
+        .composer { left: 0; }
+        main { padding: 16px 16px 110px; }
+    }
+
+    /* Removed, and why:
+       - .msg-icon circular "AI" avatar badges on every message — the single
+         clearest sign of a chat template; a transcript needs no portrait.
+       - pill-shaped composer with a circular send button that scaled on hover.
+       - blinking scaling typing dots; replaced by one plain "Thinking…" line.
+       - glowing green "Systems Active" dot with a box-shadow bloom.
+       - navy sidebar, per-item SVG icons, and a fade-up animation on each message.
+       - soft shadows on every surface and 16px radii.
+       - the camera and mic buttons. Their handlers, handleImageUpload and
+         startDictation, were never defined anywhere in the file, so both threw a
+         ReferenceError on click. There is no OCR or speech path behind them: a
+         camera would need a vision model this machine cannot fit alongside the
+         generator, and the browser speech API used by the mic would stream audio
+         to a cloud service, which contradicts running fully locally. */
 </style>
 </head>
-<!-- BODY STRUCTURE REMAINS EXACTLY THE SAME -->
 <body>
 
-<header class="header">
-    <div class="brand">
-        <div class="logo">BIS</div>
-        <div class="brand-text">
-            <h1 data-i18n="appTitle">BIS Intelligent Assistant</h1>
-            <p data-i18n="appSubtitle">Standards & Compliance</p>
-        </div>
+<header>
+    <div>
+        <h1 data-i18n="appTitle">BIS Standards Assistant</h1>
+        <div class="sub" id="corpusLine"></div>
     </div>
-    <div class="header-actions">
-        <select id="languageSelect" class="lang-switcher" onchange="updateLanguage()">
-            <option value="en">🌐 English</option>
-            <option value="hi">🌐 हिन्दी (Hindi)</option>
-            <option value="pa">🌐 ਪੰਜਾਬੀ (Punjabi)</option>
-            <option value="te">🌐 తెలుగు (Telugu)</option>
+    <div class="head-right">
+        <div class="runtime" id="runtimeLine"></div>
+        <select id="languageSelect" onchange="setLanguage(this.value)">
+            <option value="en">English</option>
+            <option value="hi">हिन्दी</option>
+            <option value="pa">ਪੰਜਾਬੀ</option>
+            <option value="te">తెలుగు</option>
         </select>
     </div>
 </header>
 
-<div class="layout">
-    <aside class="sidebar">
-        <div class="sidebar-title" data-i18n="menuTitle">Quick Links</div>
-        <div class="nav-item active" onclick="setSection(this)">
-            <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
-            <span data-i18n="navAssistant">Assistant</span>
+<div class="wrap">
+    <aside>
+        <div class="side-block">
+            <div class="side-h" data-i18n="topicsHeader">In this index</div>
+            <ul class="side-list" id="topicList"></ul>
+            <div class="side-note" id="topicNote"></div>
         </div>
-        <div class="nav-item" onclick="askShortcut('standards'); setSection(this)">
-            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
-            <span data-i18n="navStandards">Standards</span>
+
+        <div class="side-block">
+            <div class="side-h" data-i18n="searchHeader">Search passages</div>
+            <input type="text" class="side-input" id="stdSearch"
+                   data-i18n-placeholder="searchPlaceholder"
+                   placeholder="e.g. clay paving bricks" oninput="onSearchInput()">
+            <div id="searchResults" style="margin-top:8px"></div>
         </div>
-        <div class="nav-item" onclick="askShortcut('certification'); setSection(this)">
-            <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-            <span data-i18n="navCertification">Certification</span>
-        </div>
-        <div class="nav-item" onclick="askShortcut('labs'); setSection(this)">
-            <svg viewBox="0 0 24 24"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3zm13.71-9.37l-1.34-1.34a.9959.9959 0 0 0-1.41 0L9 12.25 11.75 15l8.96-8.96c.39-.39.39-1.02 0-1.41z"/></svg>
-            <span data-i18n="navLabs">Laboratories</span>
-        </div>
-        <div class="nav-item" onclick="askShortcut('hallmark'); setSection(this)">
-            <svg viewBox="0 0 24 24"><path d="M12 2L2 22h20L12 2zm0 3.8l5.2 12.2H6.8L12 5.8z"/></svg>
-            <span data-i18n="navHallmark">Hallmarking</span>
-        </div>
-        <div class="nav-item" onclick="clearChat()" style="margin-top: auto; color: #8ba6d4;">
-            <svg viewBox="0 0 24 24"><path d="M15 16h4v2h-4zm0-8h7v2h-7zm0 4h6v2h-6zM3 18c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V8H3v10zM14 5h-3l-1-1H6L5 5H2v2h12V5z"/></svg>
-            <span data-i18n="clearChat">Clear Chat</span>
-        </div>
+
+        <button class="plain-btn" onclick="clearChat()" data-i18n="clearChat">Clear transcript</button>
     </aside>
 
-    <main class="content">
-        <div class="welcome-bar">
-            <div>
-                <h2 data-i18n="welcomeHeadline">Hello! How can I assist you?</h2>
-                <p data-i18n="welcomeSub">Your AI guide for Indian Standards and compliance.</p>
-            </div>
-            <div class="status-badge">
-                <div class="status-dot"></div> <span data-i18n="statusOnline">Systems Active</span>
-            </div>
-        </div>
-
-        <div class="dashboard">
-            <div class="chat-container">
-                <div class="chat-messages" id="chatBox">
-                    <div class="message ai">
-                        <div class="msg-icon">AI</div>
-                        <div class="msg-bubble" id="initialBotGreeting">
-                            Welcome! 👋 I am the BIS Intelligent Assistant. <br><br>
-                            Whether you need <b>certification guidelines</b>, <b>hallmarking rules</b>, or to <b>search for a specific standard</b>, I am here to help.<br><br>
-                            What would you like to explore today?
-                        </div>
-                    </div>
-                </div>
-
-                <div class="chat-input-wrapper">
-                    <div class="chat-input-area">
-                        <!-- Camera / Voice Tools remain the same -->
-                        <button class="tool-btn" title="Upload Image" onclick="document.getElementById('cameraInput').click()">
-                            <svg viewBox="0 0 24 24"><path d="M4 4h3l2-2h6l2 2h3c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2zm8 3c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zm0 8c-1.65 0-3-1.35-3-3s1.35-3 3-3 3 1.35 3 3-1.35 3-3 3z"/></svg>
-                        </button>
-                        <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleImageUpload(this)">
-                        
-                        <button class="tool-btn" id="micBtn" title="Voice Input" onclick="startDictation()">
-                            <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
-                        </button>
-
-                        <input type="text" id="userInput" data-i18n-placeholder="chatPlaceholder" placeholder="Type your query or use voice..." autocomplete="off">
-                        
-                        <button class="send-btn" id="sendBtn">
-                            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="tools-panel">
-                <div class="tools-header" data-i18n="searchHeader">Quick Directory</div>
-                <div class="search-box-wrapper">
-                    <svg class="search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-                    <input type="text" id="stdSearch" data-i18n-placeholder="searchPlaceholder" placeholder="Search the indexed documents..." oninput="handleQuickSearch()">
-                </div>
-                <div class="search-results-container" id="searchResults"></div>
-            </div>
-        </div>
-    </main>
+    <main id="chatBox"></main>
 </div>
 
+<div class="composer">
+    <div class="inner">
+        <input type="text" id="userInput" autocomplete="off"
+               data-i18n-placeholder="askPlaceholder"
+               placeholder="Ask about a standard, a clause, or an IS number"
+               onkeydown="if(event.key==='Enter') send()">
+        <button id="sendBtn" onclick="send()" data-i18n="askButton">Ask</button>
+    </div>
+</div>
+
+<!-- UI strings as JSON so the four languages can be diffed by the test suite.
+     A missing key in one language used to render as the literal text "undefined". -->
+<script type="application/json" id="i18n-en">{
+  "appTitle": "BIS Standards Assistant",
+  "corpusLine": "{docs} · {pages} pages · {chunks} passages",
+  "runtimeLine": "{embed} · {gen}",
+  "runtimeUnknown": "model information unavailable",
+  "topicsHeader": "In this index",
+  "topicsNote": "Parsed from the indexed text. Click one to ask about it.",
+  "topicsError": "Could not load topics.",
+  "searchHeader": "Search passages",
+  "searchPlaceholder": "e.g. clay paving bricks",
+  "clearChat": "Clear transcript",
+  "askPlaceholder": "Ask about a standard, a clause, or an IS number",
+  "askButton": "Ask",
+  "emptyState": "Ask a question about the indexed BIS documents. Answers come only from those documents, with the clause and page shown.",
+  "thinking": "Searching the index and drafting an answer…",
+  "tagAnswer": "answered",
+  "tagLocated": "located",
+  "tagNotFound": "no match",
+  "tagNearMiss": "near match",
+  "tagUnavailable": "model unavailable",
+  "connError": "Cannot reach the BIS server. Is it running on port 3000?",
+  "serverError": "The server could not answer that. Please try again.",
+  "noResults": "No matching passage.",
+  "directoryHint": "Type to search the indexed passages.",
+  "directorySearching": "Searching…",
+  "directoryError": "Cannot reach the BIS server.",
+  "metaLine": "{ms} ms · top match {score}"
+}</script>
+
+<script type="application/json" id="i18n-hi">{
+  "appTitle": "बीआईएस मानक सहायक",
+  "corpusLine": "{docs} · {pages} पृष्ठ · {chunks} अंश",
+  "runtimeLine": "{embed} · {gen}",
+  "runtimeUnknown": "मॉडल की जानकारी उपलब्ध नहीं",
+  "topicsHeader": "इस सूची में",
+  "topicsNote": "अनुक्रमित पाठ से निकाले गए। किसी विषय के बारे में पूछने के लिए क्लिक करें।",
+  "topicsError": "विषय लोड नहीं हो सके।",
+  "searchHeader": "अनुच्छेद खोजें",
+  "searchPlaceholder": "जैसे clay paving bricks",
+  "clearChat": "वार्तालाप साफ़ करें",
+  "askPlaceholder": "किसी मानक, खंड या IS नंबर के बारे में पूछें",
+  "askButton": "पूछें",
+  "emptyState": "अनुक्रमित BIS दस्तावेज़ों के बारे में प्रश्न पूछें। उत्तर केवल उन्हीं दस्तावेज़ों से आते हैं, खंड और पृष्ठ सहित।",
+  "thinking": "सूची में खोजकर उत्तर तैयार किया जा रहा है…",
+  "tagAnswer": "उत्तर दिया",
+  "tagLocated": "पाया गया",
+  "tagNotFound": "कोई मेल नहीं",
+  "tagNearMiss": "निकटतम",
+  "tagUnavailable": "मॉडल उपलब्ध नहीं",
+  "connError": "बीआईएस सर्वर तक नहीं पहुँच सके। क्या वह पोर्ट 3000 पर चल रहा है?",
+  "serverError": "सर्वर यह उत्तर नहीं दे सका। कृपया पुनः प्रयास करें।",
+  "noResults": "कोई मिलता-जुलता अनुच्छेद नहीं।",
+  "directoryHint": "अनुक्रमित अनुच्छेदों में खोजने के लिए लिखें।",
+  "directorySearching": "खोज रहे हैं…",
+  "directoryError": "बीआईएस सर्वर तक नहीं पहुँच सके।",
+  "metaLine": "{ms} ms · सर्वोत्तम मेल {score}"
+}</script>
+
+<script type="application/json" id="i18n-pa">{
+  "appTitle": "ਬੀਆਈਐਸ ਮਿਆਰ ਸਹਾਇਕ",
+  "corpusLine": "{docs} · {pages} ਪੰਨੇ · {chunks} ਅਨੁਕਰਮ",
+  "runtimeLine": "{embed} · {gen}",
+  "runtimeUnknown": "ਮਾਡਲ ਦੀ ਜਾਣਕਾਰੀ ਉਪਲਬਧ ਨਹੀਂ",
+  "topicsHeader": "ਇਸ ਸੂਚੀ ਵਿੱਚ",
+  "topicsNote": "ਇੰਡੈਕਸ ਕੀਤੇ ਪਠ ਤੋਂ ਲਈ ਗਏ। ਕਿਸੇ ਵਿਸ਼ੇ ਬਾਰੇ ਪੁੱਛਣ ਲਈ ਕਲਿੱਕ ਕਰੋ।",
+  "topicsError": "ਵਿਸ਼ੇ ਲੋਡ ਨਹੀਂ ਹੋ ਸਕੇ।",
+  "searchHeader": "ਅਨੁਕਰਮ ਖੋਜੋ",
+  "searchPlaceholder": "ਜਿਵੇਂ clay paving bricks",
+  "clearChat": "ਗੱਲਬਾਤ ਸਾਫ਼ ਕਰੋ",
+  "askPlaceholder": "ਕਿਸੇ ਮਿਆਰ, ਖੰਡ ਜਾਂ IS ਨੰਬਰ ਬਾਰੇ ਪੁੱਛੋ",
+  "askButton": "ਪੁੱਛੋ",
+  "emptyState": "ਇੰਡੈਕਸ ਕੀਤੇ BIS ਦਸਤਾਵੇਜ਼ਾਂ ਬਾਰੇ ਪੁੱਛੋ। ਜਵਾਬ ਸਿਰਫ਼ ਉਨ੍ਹਾਂ ਹੀ ਦਸਤਾਵੇਜ਼ਾਂ ਤੋਂ ਆਉਂਦੇ ਹਨ, ਖੰਡ ਅਤੇ ਪੰਨੇ ਸਹਿਤ।",
+  "thinking": "ਸੂਚੀ ਵਿੱਚ ਖੋਜ ਕੇ ਜਵਾਬ ਤਿਆਰ ਕੀਤਾ ਜਾ ਰਿਹਾ ਹੈ…",
+  "tagAnswer": "ਜਵਾਬ ਦਿੱਤਾ",
+  "tagLocated": "ਮਿਲਿਆ",
+  "tagNotFound": "ਕੋਈ ਮੈਚ ਨਹੀਂ",
+  "tagNearMiss": "ਨੇੜੇ ਦਾ",
+  "tagUnavailable": "ਮਾਡਲ ਉਪਲਬਧ ਨਹੀਂ",
+  "connError": "ਬੀਆਈਐਸ ਸਰਵਰ ਤੱਕ ਨਹੀਂ ਪਹੁੰਚ ਸਕੇ। ਕੀ ਇਹ ਪੋਰਟ 3000 ਤੇ ਚੱਲ ਰਿਹਾ ਹੈ?",
+  "serverError": "ਸਰਵਰ ਇਹ ਜਵਾਬ ਨਹੀਂ ਦੇ ਸਕਿਆ। ਕਿਰਪਾ ਕਰਕੇ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
+  "noResults": "ਕੋਈ ਮਿਲਦਾ-ਜੁਲਦਾ ਅਨੁਕਰਮ ਨਹੀਂ।",
+  "directoryHint": "ਇੰਡੈਕਸ ਕੀਤੇ ਅਨੁਕਰਮਾਂ ਵਿੱਚ ਖੋਜਣ ਲਈ ਲਿਖੋ।",
+  "directorySearching": "ਖੋਜ ਰਿਹਾ ਹੈ…",
+  "directoryError": "ਬੀਆਈਐਸ ਸਰਵਰ ਤੱਕ ਨਹੀਂ ਪਹੁੰਚ ਸਕੇ।",
+  "metaLine": "{ms} ms · ਸਭ ਤੋਂ ਵਧੀਆ ਮੈਚ {score}"
+}</script>
+
+<script type="application/json" id="i18n-te">{
+  "appTitle": "BIS ప్రమాణాల సహాయకుడు",
+  "corpusLine": "{docs} · {pages} పేజీలు · {chunks} భాగాలు",
+  "runtimeLine": "{embed} · {gen}",
+  "runtimeUnknown": "మోడల్ వివరాలు అందుబాటులో లేవు",
+  "topicsHeader": "ఈ జాబితాలో",
+  "topicsNote": "ఇండెక్స్ చేసిన పాఠ్యం నుండి తీసుకోబడింది. అడగడానికి క్లిక్ చేయండి.",
+  "topicsError": "అంశాలు లోడ్ కాలేదు.",
+  "searchHeader": "భాగాల్లో వెతకండి",
+  "searchPlaceholder": "ఉదా. clay paving bricks",
+  "clearChat": "చాట్ తొలగించండి",
+  "askPlaceholder": "ప్రమాణం, ఖండం లేదా IS సంఖ్య గురించి అడగండి",
+  "askButton": "అడగండి",
+  "emptyState": "ఇండెక్స్ చేసిన BIS పత్రాల గురించి అడగండి. సమాధానాలు ఆ పత్రాల నుండే వస్తాయి, ఖండం, పేజీతో సహా.",
+  "thinking": "జాబితాలో వెతుకుతూ సమాధానం రూపొందిస్తోంది…",
+  "tagAnswer": "సమాధానం ఇవ్వబడింది",
+  "tagLocated": "కనబడింది",
+  "tagNotFound": "సరిపోలిక లేదు",
+  "tagNearMiss": "దగ్గరి",
+  "tagUnavailable": "మోడల్ అందుబాటులో లేదు",
+  "connError": "BIS సర్వర్‌ను చేరుకోలేకపోయాము. అది పోర్ట్ 3000లో నడుస్తోందా?",
+  "serverError": "సర్వర్ దీనికి సమాధానం ఇవ్వలేకపోయింది. దయచేసి మళ్లీ ప్రయత్నించండి.",
+  "noResults": "సరిపోలిక భాగం లేదు.",
+  "directoryHint": "ఇండెక్స్ చేసిన భాగాల్లో వెతకడానికి టైప్ చేయండి.",
+  "directorySearching": "వెతుకుతున్నాయి…",
+  "directoryError": "BIS సర్వర్‌ను చేరుకోలేకపోయాము.",
+  "metaLine": "{ms} ms · ఉత్తమ సరిపోలిక {score}"
+}</script>
+
 <script>
-    // Dictionary and UI logic remains exactly the same
-    const translations = {
-        en: {
-            appTitle: "BIS Assistant", appSubtitle: "Standards & Compliance", menuTitle: "Quick Links",
-            navAssistant: "Assistant", navStandards: "Standards", navCertification: "Certification", navLabs: "Laboratories", navHallmark: "Hallmarking", clearChat: "Clear Chat",
-            welcomeHeadline: "Hello! How can I assist you?", welcomeSub: "Your AI guide for Indian Standards and compliance.", statusOnline: "Systems Active",
-            chatPlaceholder: "Type your query or use voice...", searchHeader: "Quick Directory", searchPlaceholder: "Search the indexed documents...",
-            botGreeting: "Welcome! 👋 I am the BIS Intelligent Assistant. <br><br>Whether you need <b>certification guidelines</b>, <b>hallmarking rules</b>, or to <b>search for a specific standard</b>, I am here to help.<br><br>What would you like to explore today?",
-            noResults: "No matching passage in the indexed documents.",
-            docMeta: "{pages} pages · {chunks} passages",
-            passageMeta: "cl. {clause} · p. {pages} · {score}% match",
-            directoryHint: "Type to search the indexed documents, or pick one below.",
-            directorySearching: "Searching…",
-            directoryError: "Cannot reach the BIS server."
-        },
-        hi: {
-            appTitle: "बीआईएस सहायक", appSubtitle: "मानक और अनुपालन", menuTitle: "त्वरित लिंक",
-            navAssistant: "सहायक", navStandards: "मानक", navCertification: "प्रमाणन", navLabs: "प्रयोगशालाएं", navHallmark: "हॉलमार्किंग", clearChat: "चैट साफ़ करें",
-            welcomeHeadline: "नमस्ते! मैं कैसे सहायता कर सकता हूँ?", welcomeSub: "भारतीय मानकों के लिए आपका एआई गाइड।", statusOnline: "सिस्टम सक्रिय",
-            chatPlaceholder: "प्रश्न टाइप करें या आवाज़ का उपयोग करें...", searchHeader: "त्वरित निर्देशिका", searchPlaceholder: "अनुक्रमित दस्तावेज़ों में खोजें...",
-            botGreeting: "नमस्ते! 👋 मैं बीआईएस स्मार्ट सहायक हूँ। प्रमाणन, हॉलमार्किंग या मानक खोजने में मैं आपकी मदद कर सकता हूँ।",
-            noResults: "अनुक्रमित दस्तावेज़ों में कोई मिलान नहीं मिला।",
-            docMeta: "{pages} पृष्ठ · {chunks} अंश",
-            passageMeta: "खंड {clause} · पृ. {pages} · {score}% मेल",
-            directoryHint: "खोजने के लिए टाइप करें, या नीचे से चुनें।",
-            directorySearching: "खोज रहे हैं…",
-            directoryError: "बीआईएस सर्वर तक नहीं पहुंच सकते।"
-        },
-        pa: {
-            appTitle: "ਬੀਆਈਐਸ ਸਹਾਇਕ", appSubtitle: "ਮਿਆਰ ਅਤੇ ਪਾਲਣਾ", menuTitle: "ਤੁਰੰਤ ਲਿੰਕ",
-            navAssistant: "ਸਹਾਇਕ", navStandards: "ਮਿਆਰ", navCertification: "ਪ੍ਰਮਾਣੀਕਰਣ", navLabs: "ਪ੍ਰਯੋਗਸ਼ਾਲਾਵਾਂ", navHallmark: "ਹਾਲਮਾਰਕਿੰਗ", clearChat: "ਚੈਟ ਸਾਫ਼ ਕਰੋ",
-            welcomeHeadline: "ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਕਿਵੇਂ ਮਦਦ ਕਰਾਂ?", welcomeSub: "ਭਾਰਤੀ ਮਿਆਰਾਂ ਲਈ ਤੁਹਾਡਾ AI ਗਾਈਡ।", statusOnline: "ਸਿਸਟਮ ਸਰਗਰਮ",
-            chatPlaceholder: "ਸਵਾਲ ਟਾਈਪ ਕਰੋ ਜਾਂ ਆਵਾਜ਼ ਵਰਤੋ...", searchHeader: "ਤੁਰੰਤ ਡਾਇਰੈਕਟਰੀ", searchPlaceholder: "ਇੰਡੈਕਸ ਕੀਤੇ ਦਸਤਾਵੇਜ਼ਾਂ ਵਿੱਚ ਖੋਜੋ...",
-            botGreeting: "ਸਤ ਸ੍ਰੀ ਅਕਾਲ! 👋 ਮੈਂ BIS ਸਹਾਇਕ ਹਾਂ। ਮੈਂ ਮਦਦ ਲਈ ਇੱਥੇ ਹਾਂ।",
-            noResults: "ਇੰਡੈਕਸ ਕੀਤੇ ਦਸਤਾਵੇਜ਼ਾਂ ਵਿੱਚ ਕੋਈ ਮੈਚ ਨਹੀਂ ਮਿਲਿਆ।",
-            docMeta: "{pages} ਪੰਨੇ · {chunks} ਅਨੁਕਰਮ",
-            passageMeta: "ਕਲਾਊਸ {clause} · ਪੰਨਾ {pages} · {score}% ਮਿਲਾਪ",
-            directoryHint: "ਖੋਜਣ ਲਈ ਟਾਈਪ ਕਰੋ, ਜਾਂ ਹੇਠਾਂ ਤੋਂ ਚੁਣੋ।",
-            directorySearching: "ਖੋਜ ਰਿਹਾ ਹੈ…",
-            directoryError: "BIS ਸਰਵਰ ਤੱਕ ਨਹੀਂ ਪਹੁੰਚ ਸਕਿਆ।"
-        },
-        te: {
-            appTitle: "BIS అసిస్టెంట్", appSubtitle: "ప్రమాణాలు & సమ్మతి", menuTitle: "త్వరిత లింకులు",
-            navAssistant: "సహాయకుడు", navStandards: "ప్రమాణాలు", navCertification: "ధృవీకరణ", navLabs: "ల్యాబ్‌లు", navHallmark: "హాల్‌మార్కింగ్", clearChat: "చాట్ క్లియర్ చేయండి",
-            welcomeHeadline: "నమస్కారం! నేను ఎలా సహాయపడగలను?", welcomeSub: "భారతీయ ప్రమాణాల కోసం AI మార్గదర్శి.", statusOnline: "సిస్టమ్స్ యాక్టివ్",
-            chatPlaceholder: "ప్రశ్న టైప్ చేయండి లేదా వాయిస్ వాడండి...", searchHeader: "త్వరిత డైరెక్టరీ", searchPlaceholder: "ఇండెక్స్ చేసిన పత్రాల్లో వెతకండి...",
-            botGreeting: "నమస్కారం! 👋 నేను BIS అసిస్టెంట్‌ని. సహాయం చేయడానికి సిద్ధంగా ఉన్నాను.",
-            noResults: "ఇండెక్స్ చేసిన పత్రాల్లో సరిపోలిక కనిపించలేదు.",
-            docMeta: "{pages} పేజీలు · {chunks} భాగాలు",
-            passageMeta: "ఖండం {clause} · పేజీ {pages} · {score}% సరిపోలిక",
-            directoryHint: "వెతకడానికి టైప్ చేయండి, లేదా కింది నుండి ఎంచుకోండి.",
-            directorySearching: "వెతుకుతున్నాయి…",
-            directoryError: "BIS సర్వర్‌ను చేరుకోలేకపోయాము."
+'use strict';
+
+const LANGS = ['en', 'hi', 'pa', 'te'];
+const I18N = Object.fromEntries(
+    LANGS.map((l) => [l, JSON.parse(document.getElementById('i18n-' + l).textContent)])
+);
+
+let lang = 'en';
+const t = (key) => I18N[lang][key] ?? I18N.en[key] ?? key;
+const fill = (key, vars) =>
+    Object.entries(vars).reduce((s, [k, v]) => s.split('{' + k + '}').join(String(v)), t(key));
+
+// Served from the same origin as the API, but the file also has to work when
+// opened straight from disk, where "/api/..." would resolve to file:///api/...
+const API_BASE = location.protocol === 'file:' ? 'http://localhost:3000' : '';
+
+const chatBox = document.getElementById('chatBox');
+const input = document.getElementById('userInput');
+const sendBtn = document.getElementById('sendBtn');
+
+function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Suggestion buttons arrive as server-rendered HTML inside an answer, so they are
+// wired by delegation. Reading data-ask rather than an inline onclick also means a
+// title containing an apostrophe cannot break out of a JS string literal.
+//
+// Delegation is bound to all three lists that can hold a button. Binding it only to
+// the transcript looked fine and left the whole sidebar inert: the topic buttons in
+// #topicList and the passage cards in #searchResults are siblings of the transcript,
+// not descendants, so no click ever reached the handler.
+for (const host of [chatBox, document.getElementById('topicList'), document.getElementById('searchResults')]) {
+    host.addEventListener('click', (e) => {
+        const b = e.target.closest('.ask-suggestion, .side-btn, .dir-card');
+        if (b && b.dataset.ask) {
+            e.preventDefault();
+            ask(b.dataset.ask);
         }
-    };
-
-    const shortcutQuestions = {
-        standards: { en: "How do I find a specific Indian Standard?", hi: "मैं एक विशिष्ट भारतीय मानक कैसे खोज सकता हूँ?", pa: "ਮੈਂ ਇੱਕ ਖਾਸ ਭਾਰਤੀ ਮਿਆਰ ਕਿਵੇਂ ਲੱਭ ਸਕਦਾ ਹਾਂ?", te: "నేను నిర్దిష్ట భారతీయ ప్రమాణాన్ని ఎలా కనుగొనగలను?" },
-        certification: { en: "Explain the BIS product certification process.", hi: "बीआईएस उत्पाद प्रमाणन प्रक्रिया की व्याख्या करें।", pa: "BIS ਉਤਪਾਦ ਪ੍ਰਮਾਣੀਕਰਣ ਪ੍ਰਕਿਰਿਆ ਦੀ ਵਿਆਖਿਆ ਕਰੋ।", te: "BIS ఉత్పత్తి ధృవీకరణ ప్రక్రియను వివరించండి." },
-        labs: { en: "Where can I find BIS recognized testing labs?", hi: "मुझे बीआईएस मान्यता प्राप्त परीक्षण प्रयोगशालाएं कहां मिल सकती हैं?", pa: "ਮੈਨੂੰ BIS ਮਾਨਤਾ ਪ੍ਰਾਪਤ ਟੈਸਟਿੰਗ ਲੈਬਾਂ ਕਿੱਥੇ ਮਿਲ ਸਕਦੀਆਂ ਹਨ?", te: "నేను BIS గుర్తింపు పొందిన టెస్టింగ్ ల్యాబ్‌లను ఎక్కడ కనుగొనగలను?" },
-        hallmark: { en: "What are the rules for Gold Hallmarking?", hi: "गोल्ड हॉलमार्किंग के नियम क्या हैं?", pa: "ਗੋਲਡ ਹਾਲਮਾਰਕਿੰਗ ਦੇ ਨਿਯਮ ਕੀ ਹਨ?", te: "గోల్డ్ హాల్‌మార్కింగ్ నియమాలు ఏమిటి?" }
-    };
-
-    // The server serves this same file at /, so it is normally same-origin. But
-    // it also has to keep working when opened directly from disk, where the
-    // origin is file:// and a relative "/api/..." would resolve to file:///api/...
-    const API_BASE = location.protocol === 'file:' ? 'http://localhost:3000' : '';
-
-    let currentLang = 'en';
-
-    function updateLanguage() {
-        const langSelect = document.getElementById('languageSelect');
-        currentLang = langSelect.value;
-        const t = translations[currentLang];
-        document.querySelectorAll('[data-i18n]').forEach(el => {
-            const key = el.getAttribute('data-i18n');
-            if (t[key]) el.innerHTML = t[key];
-        });
-        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-            const key = el.getAttribute('data-i18n-placeholder');
-            if (t[key]) el.placeholder = t[key];
-        });
-        const greetingEl = document.getElementById('initialBotGreeting');
-        if(greetingEl) greetingEl.innerHTML = t.botGreeting;
-        // Re-label the panel in the new language. The directory is an English-only
-        // semantic index, so a live query is not re-issued (it would spend another
-        // embedding call to return the same English matches).
-        if (lastDirectory) paintDirectory(); else loadCorpusList();
-    }
-
-    // The Quick Directory used to filter a hardcoded list of four Indian Standard
-    // codes. Every one of them was fabricated relative to the corpus: nothing in
-    // data/pdfs covers them, so the panel advertised answers the backend could not
-    // produce and clicking one got a refusal. It now reads the real index.
-    //
-    // Raw rows are kept in lastDirectory and formatted at paint time, so switching
-    // the UI language re-labels the panel without spending another embedding call.
-    let lastDirectory = null;
-
-    function directoryMessage(key) {
-        document.getElementById("searchResults").innerHTML =
-            `<div class="no-results">${escapeHTML(translations[currentLang][key])}</div>`;
-    }
-
-    function paintDirectory() {
-        const container = document.getElementById("searchResults");
-        const d = lastDirectory;
-
-        if (!d || d.rows.length === 0) {
-            container.innerHTML = `<div class="no-results">${escapeHTML(
-                d ? translations[currentLang].noResults : translations[currentLang].directoryHint)}</div>`;
-            return;
-        }
-
-        const t = translations[currentLang];
-        // Document titles and text come from PDFs, which are user input, and this
-        // is assigned via innerHTML — so everything interpolated is escaped. The
-        // click handler reads data-ask rather than an inline onclick, which also
-        // avoids an apostrophe in a title breaking out of a JS string literal.
-        container.innerHTML = d.rows.map(r => `
-            <div class="result-card" data-ask="${escapeHTML(r.ask)}">
-                <h4>${escapeHTML(r.title)}</h4>
-                <p class="rc-sub">${escapeHTML(r.subtitle(t))}</p>
-                <p>${escapeHTML(r.preview)}</p>
-            </div>
-        `).join('');
-    }
-
-    function documentRows(documents) {
-        return documents.map(d => ({
-            title: d.docTitle,
-            ask: `Summarise ${d.docTitle}`,
-            subtitle: (l) => l.docMeta.replace('{pages}', d.pageCount).replace('{chunks}', d.chunkCount),
-            preview: d.sourceFile,
-        }));
-    }
-
-    function passageRows(results) {
-        return results.map(r => ({
-            title: r.docTitle,
-            ask: r.clause ? `Tell me about ${r.docTitle}, clause ${r.clause}` : `Tell me about ${r.docTitle}`,
-            subtitle: (l) => l.passageMeta
-                .replace('{clause}', r.clause || '—')
-                .replace('{pages}', r.pages.join('–'))
-                .replace('{score}', Math.round(r.similarity * 100)),
-            preview: r.preview,
-        }));
-    }
-
-    async function loadCorpusList() {
-        try {
-            const res = await fetch(`${API_BASE}/api/documents`);
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'failed');
-            lastDirectory = { rows: documentRows(data.documents) };
-            paintDirectory();
-        } catch (err) {
-            lastDirectory = null;
-            directoryMessage('directoryError');
-        }
-    }
-
-    // One search request costs one embedding call, so every keystroke would spend
-    // quota against a ~100/min free-tier cap. Debounce, and ignore very short
-    // fragments where the embedding carries no usable signal.
-    const SEARCH_DEBOUNCE_MS = 350;
-    const SEARCH_MIN_CHARS = 3;
-    let searchTimer = null;
-    let searchSeq = 0;
-
-    function handleQuickSearch() {
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(runQuickSearch, SEARCH_DEBOUNCE_MS);
-    }
-
-    async function runQuickSearch() {
-        const q = document.getElementById("stdSearch").value.trim();
-        const seq = ++searchSeq;
-
-        if (q.length < SEARCH_MIN_CHARS) {
-            // No usable query: fall back to showing what is actually indexed.
-            lastDirectory = null;
-            loadCorpusList();
-            return;
-        }
-
-        directoryMessage('directorySearching');
-        try {
-            // threshold is deliberately not passed, so the server's configured
-            // value stays the single source of truth.
-            const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}&k=8`);
-            const data = await res.json();
-            if (seq !== searchSeq) return; // a newer keystroke already superseded this
-            if (!res.ok) throw new Error(data.error || 'failed');
-            lastDirectory = { rows: passageRows(data.results) };
-            paintDirectory();
-        } catch (err) {
-            if (seq !== searchSeq) return;
-            lastDirectory = null;
-            directoryMessage('directoryError');
-        }
-    }
-
-    document.getElementById("searchResults").addEventListener("click", (e) => {
-        const card = e.target.closest('.result-card');
-        if (card) askQuestion(card.dataset.ask);
     });
+}
 
-    const chatBox = document.getElementById("chatBox");
-    const userInput = document.getElementById("userInput");
-    const sendBtn = document.getElementById("sendBtn");
+/* ---------- transcript ---------- */
 
-    sendBtn.addEventListener("click", handleSend);
-    userInput.addEventListener("keypress", (e) => { if (e.key === "Enter") handleSend(); });
+function emptyState() {
+    chatBox.innerHTML = '<div class="turn"><div class="intro">' + esc(t('emptyState')) + '</div></div>';
+}
 
-    // ==== MODIFIED ASYNC FETCH LOGIC ====
-    async function handleSend() {
-        const text = userInput.value.trim();
-        if (!text) return;
-        
-        appendMessage("user", text);
-        userInput.value = "";
-        
-        const typingId = showTypingIndicator();
-        
-        try {
-            // Send request to our new Node.js server
-            const response = await fetch(`${API_BASE}/api/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: text, lang: currentLang })
-            });
-            
-            const data = await response.json();
-            removeTypingIndicator(typingId);
-            appendMessage("ai", data.answer);
-            
-        } catch (error) {
-            console.error("Backend connection error:", error);
-            removeTypingIndicator(typingId);
-            appendMessage("ai", "⚠️ Cannot connect to the BIS server. Please ensure the backend is running.");
+function turn(queryHtml, answerHtml, tagKey, meta) {
+    const div = document.createElement('div');
+    div.className = 'turn';
+    const tag = tagKey ? '<span class="tag">' + esc(t(tagKey)) + '</span>' : '';
+    const metaLine = meta
+        ? '<div class="side-note" style="margin-top:8px">' +
+          esc(fill('metaLine', { ms: meta.ms, score: meta.score })) + '</div>'
+        : '';
+    // The server sanitises everything it renders and the only markup in `answerHtml`
+    // is the server's own, so it is injected as-is. The query is escaped here
+    // because it is echoed straight back from what the user typed.
+    div.innerHTML =
+        '<div class="q">' + queryHtml + tag + '</div>' +
+        '<div class="a">' + answerHtml + '</div>' +
+        metaLine;
+    chatBox.appendChild(div);
+    chatBox.scrollIntoView({ block: 'end' });
+    chatBox.scrollTop = chatBox.scrollHeight;
+    return div;
+}
+
+function notice(html) {
+    const d = document.createElement('div');
+    d.className = 'notice';
+    d.innerHTML = html;
+    chatBox.appendChild(d);
+    chatBox.scrollTop = chatBox.scrollHeight;
+    return d;
+}
+
+async function send() {
+    const text = input.value.trim();
+    if (!text) return;
+
+    input.value = '';
+    sendBtn.disabled = true;
+    if (!chatBox.querySelector('.turn')) emptyState();
+    const pending = turn(esc(text), '<div class="thinking">' + esc(t('thinking')) + '</div>', null, null);
+
+    try {
+        const res = await fetch(API_BASE + '/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: text, lang }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+            pending.remove();
+            notice(esc(data.error || t('serverError')));
+            return;
         }
+
+        const m = data.meta || {};
+        // Four genuinely different outcomes, previously all rendered as the same
+        // plain bubble: the user could not tell a refusal from an outage.
+        let tag = 'tagAnswer';
+        if (m.degraded) tag = 'tagUnavailable';
+        else if (m.band === 'located') tag = 'tagLocated';
+        else if (m.band === 'bridge') tag = 'tagNearMiss';
+        else if (m.band === 'miss' || m.notFound) tag = 'tagNotFound';
+
+        const meta =
+            m.total !== undefined
+                ? { ms: m.total, score: m.topSimilarity !== undefined ? m.topSimilarity : '—' }
+                : null;
+
+        pending.remove();
+        turn(esc(text), data.answer, tag, meta);
+    } catch (err) {
+        pending.remove();
+        notice(esc(t('connError')));
+    } finally {
+        sendBtn.disabled = false;
+        input.focus();
+    }
+}
+
+function ask(text) {
+    input.value = text;
+    send();
+}
+
+function clearChat() {
+    emptyState();
+    input.focus();
+}
+
+/* ---------- sidebar ---------- */
+
+async function loadTopics() {
+    const list = document.getElementById('topicList');
+    const note = document.getElementById('topicNote');
+    try {
+        const res = await fetch(API_BASE + '/api/topics');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        list.innerHTML = data.topics
+            .map((x) =>
+                '<li><button class="side-btn" data-ask="' +
+                esc('What is ' + x.isCode + ' ' + x.title + '?') +
+                '">' + esc(x.title) + ' <span class="code">' + esc(x.isCode) + '</span></button></li>')
+            .join('');
+        note.textContent = t('topicsNote');
+    } catch (err) {
+        list.innerHTML = '';
+        note.textContent = t('topicsError');
+    }
+}
+
+const SEARCH_DEBOUNCE_MS = 300;
+const SEARCH_MIN_CHARS = 3;
+let searchTimer = null;
+let searchSeq = 0;
+
+function onSearchInput() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(runSearch, SEARCH_DEBOUNCE_MS);
+}
+
+function dirNote(text) {
+    document.getElementById('searchResults').innerHTML =
+        '<div class="side-note">' + esc(text) + '</div>';
+}
+
+async function runSearch() {
+    const q = document.getElementById('stdSearch').value.trim();
+    const seq = ++searchSeq;
+    const box = document.getElementById('searchResults');
+
+    if (q.length < SEARCH_MIN_CHARS) {
+        dirNote(t('directoryHint'));
+        return;
     }
 
-    function appendMessage(sender, text) {
-        const div = document.createElement("div");
-        div.className = `message ${sender}`;
-        const icon = sender === 'user' ? 'U' : 'AI';
-        div.innerHTML = `
-            ${sender === 'ai' ? `<div class="msg-icon">${icon}</div>` : ''}
-            <div class="msg-bubble">${sender === 'user' ? escapeHTML(text) : text}</div>
-            ${sender === 'user' ? `<div class="msg-icon">${icon}</div>` : ''}
-        `;
-        chatBox.appendChild(div);
-        scrollToBottom();
+    dirNote(t('directorySearching'));
+    try {
+        const res = await fetch(API_BASE + '/api/search?q=' + encodeURIComponent(q) + '&k=8');
+        const data = await res.json();
+        if (seq !== searchSeq) return;
+        if (!res.ok) throw new Error(data.error);
+        if (!data.results.length) {
+            dirNote(t('noResults'));
+            return;
+        }
+        box.innerHTML = data.results
+            .map((r) => {
+                const pages = r.pages.length > 1 ? r.pages[0] + '–' + r.pages[1] : r.pages[0];
+                const ask =
+                    r.clause ? 'Tell me about ' + r.docTitle + ', clause ' + r.clause
+                             : 'Tell me about ' + r.docTitle;
+                return '<div class="dir-card" data-ask="' + esc(ask) + '">' +
+                    '<div class="t">' + esc(r.docTitle) + '</div>' +
+                    '<div class="m">' + esc('cl. ' + (r.clause || '—') + ' · p. ' + pages) + '</div>' +
+                    '<div class="p">' + esc(r.preview.slice(0, 150)) + '…</div></div>';
+            })
+            .join('');
+    } catch (err) {
+        if (seq !== searchSeq) return;
+        dirNote(t('directoryError'));
     }
+}
 
-    function showTypingIndicator() {
-        const id = 'typing-' + Date.now();
-        const div = document.createElement("div");
-        div.className = "message ai"; div.id = id;
-        div.innerHTML = `<div class="msg-icon">AI</div><div class="msg-bubble"><div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>`;
-        chatBox.appendChild(div); scrollToBottom();
-        return id;
+/* ---------- header ---------- */
+
+async function loadHealth() {
+    const el = document.getElementById('runtimeLine');
+    try {
+        const res = await fetch(API_BASE + '/api/health');
+        const d = await res.json();
+        const c = d.config || {};
+        // The active provider/model pair, read from the same config the server
+        // runs on. It previously reported Gemini models on a fully local install,
+        // which made it impossible to tell from the UI what was actually running.
+        if (c.embedModel && c.genModel) {
+            el.textContent = fill('runtimeLine', {
+                embed: c.embedProvider + '/' + c.embedModel,
+                gen: c.genProvider + '/' + c.genModel,
+            });
+        } else {
+            el.textContent = t('runtimeUnknown');
+        }
+
+        if (d.corpus) {
+            const pages = (d.corpus.documents || []).reduce((n, x) => n + (x.pageCount || 0), 0);
+            document.getElementById('corpusLine').textContent = fill('corpusLine', {
+                docs: (d.corpus.documents || []).map((x) => x.docTitle).join(', ') || '—',
+                pages,
+                chunks: d.corpus.chunkCount,
+            });
+        }
+    } catch (err) {
+        el.textContent = t('connError');
     }
+}
 
-    function removeTypingIndicator(id) { const el = document.getElementById(id); if (el) el.remove(); }
+function setLanguage(next) {
+    lang = LANGS.includes(next) ? next : 'en';
+    document.documentElement.lang = lang;
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+        const v = I18N[lang][el.getAttribute('data-i18n')];
+        if (v) el.textContent = v;
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+        const v = I18N[lang][el.getAttribute('data-i18n-placeholder')];
+        if (v) el.placeholder = v;
+    });
+    document.getElementById('topicNote').textContent = t('topicsNote');
+    document.getElementById('stdSearch').placeholder = t('searchPlaceholder');
+    // Relabelling the search box invalidates whatever it was showing.
+    if (!document.getElementById('stdSearch').value.trim()) dirNote(t('directoryHint'));
+    loadTopics();
+    loadHealth();
+    input.focus();
+}
 
-    function askQuestion(text) { userInput.value = text; handleSend(); }
-    function askShortcut(type) { askQuestion(shortcutQuestions[type][currentLang]); }
-    function clearChat() { chatBox.innerHTML = `<div class="message ai"><div class="msg-icon">AI</div><div class="msg-bubble" id="initialBotGreeting">${translations[currentLang].botGreeting}</div></div>`; }
-    function scrollToBottom() { chatBox.scrollTop = chatBox.scrollHeight; }
-    function escapeHTML(str) { return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)); }
-    function setSection(el) { document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active')); el.classList.add('active'); }
-
-    window.onload = () => { loadCorpusList(); };
+// setLanguage already fetches topics and health, so calling them again here
+// doubled every request on first paint and on each language switch.
+setLanguage('en');
+emptyState();
 </script>
 </body>
 </html>

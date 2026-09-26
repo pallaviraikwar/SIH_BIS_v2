@@ -5,24 +5,37 @@ from retrieved clauses, cite them by document/clause/page, and **refuse** when t
 corpus has nothing relevant — no invented product data, no fall-back to general
 knowledge.
 
-The frontend (`BIS_Assistant_frontend.html`) is untouched. This repo is the
-server behind it.
+The frontend (`BIS_Assistant_frontend.html`) is served by this repo and is the
+same document in both.
+
+Everything runs **locally**. Generation and embedding are both Ollama models, so
+there is no API key, no network dependency, and no per-request quota to run out
+of mid-demo. The `GEMINI_API_KEY` and `OPEN_ROUTER_API_KEY` variables in
+`.env.example` are vestigial and are not read unless a provider is switched back
+on explicitly.
 
 ```
 PDF ──▶ text + running-head removal ──▶ clause-aware chunking
                                              │
-                                     Gemini embeddings (768d)
+                                nomic-embed-text (768d, local)
                                              │
                                         pgvector (Docker)
                                              │
-query ──▶ translate to English ──▶ similarity search ──▶ Gemini answer + citations
+query ──▶ translate to English ──▶ vector + full-text search, fused by rank
+                                             │
+                              sarvam-1 (local) ──▶ answer + citations
 ```
+
+Retrieval no longer stops at a single similarity cutoff. Scores are banded after
+the search — answer / soft / bridge / miss — because the in-corpus and
+out-of-corpus score distributions overlap on this corpus and no single threshold
+can separate them. See [Three retrieval bands](#three-retrieval-bands).
 
 ## Setup
 
 ```bash
 npm install
-cp .env.example .env        # then add GEMINI_API_KEY
+cp .env.example .env        # no API key needed for the local default
 docker compose up -d        # pgvector on 127.0.0.1:5433
 ```
 
@@ -62,9 +75,12 @@ of filename substrings; anything matching is left out of ingestion, and the
 files stay in the folder so you can switch a document back on by editing one
 line.
 
-## Gemini quota limits (this bites on the free tier)
+## Quota limits (only relevant if you switch back to a hosted provider)
 
-Two different quotas share the same key, and they are not interchangeable:
+The local default has no quota at all. This section is kept because the quota
+shapes are the reason the project is local, and because the failure mode returns
+if a hosted provider is configured. Two different quotas share one key, and they
+are not interchangeable:
 
 | Operation | Free-tier limit | Symptom when exceeded |
 | --- | --- | --- |
@@ -139,33 +155,54 @@ a question that was fine.
 
 **768 dimensions, not 3072.** pgvector's HNSW and IVFFlat indexes cannot exceed
 2000 dimensions, and Gemini's default embedding width is 3072. `EMBED_DIMS=768`
-stays inside the limit. Gemini does *not* L2-normalise reduced-width vectors
-(observed norm ≈ 0.58), so `src/gemini.js` normalises explicitly — otherwise
+stays inside the limit. The local model is normalised explicitly — otherwise
 cosine similarity is silently wrong. The width is asserted on every response and
 at startup, so a model change fails loudly instead of corrupting the index.
 
-**Threshold 0.60 — measured, not guessed.** Gemini cosine scores sit in a narrow
-band, so a plausible-looking threshold is worthless without evidence. Measured
-against this repo's own corpus (6 documents, 536 chunks) with 6 in-corpus and 6
-out-of-corpus probe questions:
+**768 is also the model's native width, so nothing is being truncated.** Ollama's
+`dimensions` parameter must be *lower* than native, so it is not sent at all.
+
+### Three retrieval bands
+
+**A single threshold is not enough, and that is a measured result rather than a
+preference.** Calibrated against this repo's own corpus (1 document, 3,445 chunks):
 
 | | top-1 similarity |
 | --- | --- |
-| in-corpus questions | 0.625 – 0.764 |
-| off-topic questions | 0.466 – 0.563 |
+| in-corpus questions | 0.677 – 0.826 (median 0.767) |
+| off-topic questions | 0.466 – 0.708 (median 0.565) |
 
-That leaves a usable gap of (0.563, 0.625]. The threshold sits inside it, biased
-toward refusing, because for a grounded assistant a wrong answer is worse than
-no answer. The threshold is applied **in SQL**, so weak context never reaches the
-prompt — if nothing clears the bar the request is answered with a refusal and
-the model is never called.
+The distributions **overlap** between 0.677 and 0.708. There is no number that
+separates them, so any threshold placed in that window is a coin flip decided by
+the constant rather than by the evidence — and two real cases showed it.
+"fly ash", a genuine question about a material the document covers, scored 0.668
+and missed a 0.67 bar by 0.002. Meanwhile "tell me about the plastics" scored
+into the answer band with nothing behind it at all.
 
-This is corpus-specific, and the earlier 0.55 is a concrete example of why that
-matters: at 0.55 an off-topic product question ("maximum moisture in biscuits",
-scoring 0.563) cleared the bar and would have been answered from unrelated
-regulatory text. Re-measure with
+So nothing is cut off in SQL any more. Retrieval fetches down to `BRIDGE_FLOOR`
+and the score is banded afterwards:
+
+| Band | Range | Behaviour |
+| --- | --- | --- |
+| `answer` | ≥ 0.67 | the clause is handed to the model |
+| `soft` | 0.60 – 0.67 | the model is asked to answer **or decline**; a decline falls back to the bridge |
+| `bridge` | 0.45 – 0.60 | "no X, but the closest thing is Y, clause Z" |
+| `miss` | < 0.45 | echo the query, offer topics parsed out of the corpus |
+
+`softThreshold` sits above the out-of-corpus median (0.565) and below the
+in-corpus minimum (0.677), so most real questions reach the model and the flat
+refusal band is narrow. A wrong answer is still worse than no answer, so the
+residual overlap is handled by letting the model decline rather than by moving
+the threshold.
+
+These values are corpus- and model-specific. `npm run calibrate` re-measures them;
+they do not transfer between embedding models.
+
+Re-measure with
 `curl "localhost:3000/api/search?q=…&k=8&threshold=0"` after changing the model,
-the width, or the corpus.
+the width, or the corpus. A concrete example of why that matters: at 0.55 an
+off-topic product question ("maximum moisture in biscuits", scoring 0.563)
+cleared the bar and would have been answered from unrelated regulatory text.
 
 **Chunks break on clause boundaries.** With a 1200-char budget a whole page
 fits in one chunk, which would drag clauses 1 through 5.2 together and force a
@@ -202,8 +239,8 @@ filenames. Both are escaped, and `test/chunker.test.js` asserts `<script>` and
 ## Tests
 
 ```bash
-npm test          # 30 unit tests, no network
-npm run test:e2e  # real Gemini, in-memory store, no Docker needed
+npm test          # unit tests, no network
+npm run test:e2e  # real local Ollama, in-memory store, no Docker needed
 ```
 
 The e2e suite mocks only the store, so embedding, retrieval, translation,

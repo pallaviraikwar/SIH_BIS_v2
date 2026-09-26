@@ -298,5 +298,5 @@ test('buildAnswerPrompt labels passages and targets the requested language', () 
   });
   assert.ok(p.includes('[1] IS 14543:2024 — Clause 5.2 — page 2-3'), p.slice(0, 200));
   assert.ok(p.includes('Answer in Hindi (Devanagari)'));
-  assert.ok(p.includes('original English form'), 'must instruct keeping IS codes in English');
+  assert.ok(p.includes('Keep IS codes and numbers in English'), 'must instruct keeping IS codes in English');
 });

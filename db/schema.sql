@@ -108,3 +108,38 @@ create unique index if not exists bis_chunks_doc_chunk_uniq
 -- the per-document bookkeeping in the ingest path fast. Superseded by the unique
 -- index above, which has the same leading column.
 create index if not exists bis_chunks_doc_id_idx on bis_chunks (doc_id);
+
+-- Keyword arm of hybrid retrieval.
+--
+-- Vectors match meaning and fail on identifiers. Measured on this corpus with
+-- nomic-embed-text, a bare "IS 456" scores 0.546 — below the 0.67 answer bar —
+-- because an embedding has no way to treat "456" as an identifier rather than a
+-- quantity, and a number carries almost no meaning on its own. That is a
+-- different failure from a misspelling and it is fixable with a lexical index.
+--
+-- What this index does: whole-word and identifier matching, GIN-indexed and fast.
+-- "IS 456" and "clay paving bricks" match exactly.
+--
+-- What it deliberately does not do is catch misspellings, and no trigram arm was
+-- kept for that. It was built and measured, and it does not work here:
+-- `word_similarity('brks', content)` returns an identical 0.600 against
+-- "Tolerances", "thermocouple" and "Acoustical materials" alike, because on a
+-- 765-character chunk the best-matching *word extent* is an incidental four-
+-- character coincidence. Its recall on "cemnt" was 0.667 for "solvent cement",
+-- "polyester resin" and "PVC fittings" — eight rows, all confidently wrong, all
+-- ranked as if they were matches. A retriever that returns wrong text with a
+-- high score is worse than one that returns nothing, so it was removed rather
+-- than tuned. Misspelled queries are handled by the bridge band instead, which
+-- shows the nearest real clause and says plainly that it is not a match.
+--
+-- 'simple' is deliberate. The default 'english' config stems and drops stop words,
+-- which is wrong for this corpus: the vocabulary is dense with material and product
+-- names ("water", "sand", "stone", "cold", "hard") that a stemmer would strip or
+-- conflate, and clause references like "6.1" need to match literally.
+--
+-- A generated column, so the indexed text is derived from the stored text by
+-- Postgres itself and the two cannot drift.
+alter table bis_chunks add column if not exists search_tsv tsvector
+    generated always as (to_tsvector('simple', doc_title || ' ' || content)) stored;
+
+create index if not exists bis_chunks_tsv_idx on bis_chunks using gin (search_tsv);

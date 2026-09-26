@@ -1,5 +1,6 @@
 import express from 'express';
-import { getCorpusStats } from '../store.js';
+import { getCorpusStats, corpusTopics } from '../store.js';
+import { config } from '../config.js';
 
 export const documentsRouter = express.Router();
 
@@ -29,6 +30,26 @@ documentsRouter.get('/documents', async (_req, res) => {
     });
   } catch (err) {
     console.error('[documents] failed:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Real standard titles from the indexed text, for the sidebar.
+ *
+ * Replaces a hardcoded list of four Indian Standard codes that were all absent
+ * from the corpus. Every one of them was a dead end: a code rendered as a
+ * clickable link looks authoritative, so a refusal behind it reads as a broken
+ * application rather than as "that standard is not loaded". Deriving the list from
+ * `bis_chunks` means the sidebar can only ever offer something the assistant can
+ * actually answer, and it updates itself when the corpus does.
+ */
+documentsRouter.get('/topics', async (_req, res) => {
+  try {
+    const topics = await corpusTopics({ limit: config.retrieval.suggestionCount * 3 });
+    return res.json({ count: topics.length, topics });
+  } catch (err) {
+    console.error('[topics] failed:', err);
     return res.status(500).json({ error: err.message });
   }
 });

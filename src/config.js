@@ -58,6 +58,7 @@ export const config = {
   generation: {
     provider: str('GEN_PROVIDER', 'ollama'),
     fallbackProvider: str('GEN_FALLBACK_PROVIDER', ''),
+    fallbackModel: str('GEN_FALLBACK_MODEL', ''),
     fallbackEnabled: bool('GEN_FALLBACK', false),
     model: str('GEN_MODEL', 'mashriram/sarvam-1'),
     temperature: num('GEN_TEMPERATURE', 0.1),
@@ -66,6 +67,26 @@ export const config = {
     // longest chunk is 1,942 characters — so the output reserve has to leave room
     // for the tail, and prompts.js trims the passages to whatever is left.
     maxOutputTokens: GEN_MAX_TOKENS,
+    topP: num('GEN_TOP_P', 0.9),
+    // sarvam-1 is a 2.5B model and, left alone, will fall into a repetition loop
+    // and emit the same sentence until it exhausts the output budget. Observed
+    // directly: "tensile test on steel pipes" produced "The minimum stress
+    // required for the pipe to be considered safe for use is recorded." forty
+    // times, having quoted no number from the clause it was given. A penalty is
+    // the cheapest available fix and costs nothing on a correct answer.
+    repeatPenalty: num('GEN_REPEAT_PENALTY', 1.15),
+    // How many times one sentence may repeat before the answer is treated as
+    // degenerate and thrown away rather than shown to a user.
+    maxSentenceRepeats: num('GEN_MAX_SENTENCE_REPEATS', 3),
+    /**
+     * Asked to reproduce the answer's opening words.
+     *
+     * Ollama accepts a trailing assistant turn as a prefix to continue, which
+     * forces generation to start on-task instead of restating the instructions.
+     * Before this existed the model echoed the system prompt verbatim in roughly
+     * 1 run in 7. Setting it is nearly free; leaving it unset is not.
+     */
+    prefill: str('GEN_PREFILL', 'Answer:'),
   },
 
   /**
@@ -159,14 +180,34 @@ export const config = {
   retrieval: {
     topK: num('TOP_K', 5),
     /**
+     * How many of the retrieved passages the *generator* actually reads.
+     *
+     * Deliberately fewer than `topK`, and the number is measured rather than
+     * chosen. Asked to ground in 1 passage, sarvam-1 answers in ~11s and quotes
+     * the values in the clause. Asked to ground in 2 it takes ~29s and starts
+     * answering from the wrong clause; at 3 it reverts to generic textbook prose.
+     * More evidence made this model worse, not better, because it attends to the
+     * wrong one of them.
+     *
+     * Retrieval still returns all `topK` and all of them are shown to the user, so
+     * nothing the model could have cited is hidden. Only the count of passages it
+     * reads is reduced.
+     */
+    answerPassages: num('ANSWER_PASSAGES', 1),
+    /**
      * Token ceiling for the retrieved passages in one generation prompt.
      *
      * Derived rather than guessed: the model window minus the output reserve.
      * This exists because a fixed passage count cannot guarantee a prompt fits.
-     * Measured on this corpus, 20 passages average ~757 characters each, so the
-     * prompt lands near 6,600 tokens — comfortably inside sarvam-1's 8,192 — but
-     * the *longest* passages run to 1,942 characters, and 20 of those reach 15,000
-     * tokens and overflow. Average-fits is not the same as always-fits.
+     *
+     * Note the arithmetic is on `answerTopK` passages, NOT on the 20 candidates
+     * `searchChunks` fetches: it over-fetches to rerank, then returns topK, so
+     * only topK ever reaches the prompt. At topK=5 with passages averaging 757
+     * characters the prompt lands near 2,200 tokens, comfortably inside the
+     * 8,192 window. This budget is therefore mostly insurance — it matters if
+     * TOP_K is raised, or if the corpus starts producing much longer chunks.
+     * The longest chunk in this corpus is 1,942 characters, and five of those
+     * would reach ~3,300 tokens, which still fits.
      *
      * prompts.js trims the lowest-ranked passages until the prompt provably fits
      * this budget, so the tail sheds its two weakest passages instead of being
@@ -182,7 +223,66 @@ export const config = {
     // 0.62-0.76 with greetings as high as 0.6056, while lfm-2.5-embedding-350m
     // put the same greetings as low as 0.04. A threshold carried across that
     // change would be meaningless. Measure with `npm run calibrate`.
-    threshold: num('SIMILARITY_THRESHOLD', 0.45),
+    // The top of the three-band scale below, so the default has to agree with it.
+    // `softThreshold` and `bridgeFloor` are meaningless if this sits below them.
+    threshold: num('SIMILARITY_THRESHOLD', 0.67),
+
+    /**
+     * The three-way band below `threshold`.
+     *
+     * A single cutoff forces a binary decision at a point where the score
+     * distributions actually overlap, and the overlap is not academic: on the
+     * current corpus, in-corpus questions run 0.677-0.826 while out-of-corpus
+     * questions reach 0.708. There is no number that separates them, so anything
+     * near the middle is a coin flip decided by a threshold rather than by
+     * evidence. Two observed cases made that concrete: "fly ash" scored 0.668 and
+     * missed a 0.67 bar by 0.002, while "tell me about the plastics" scored high
+     * on nothing at all.
+     *
+     * So retrieval is no longer cut off in SQL. Everything down to `bridgeFloor`
+     * is fetched and banded afterwards:
+     *
+     *   >= threshold      answer  — the model gets the clause
+     *   >= softThreshold  soft    — the model is asked to answer or decline; on
+     *                               decline the near-miss is shown as a bridge
+     *   >= bridgeFloor    bridge  — "I don't have X, closest is Y, clause Z"
+     *   <  bridgeFloor    miss    — echo the query, suggest real corpus topics
+     *
+     * `softThreshold` is where a genuine attempt starts. It sits above the
+     * out-of-corpus median (0.565) and below the in-corpus minimum (0.677), so
+     * most real questions reach the model and the refusal band is narrow.
+     */
+    softThreshold: num('SOFT_THRESHOLD', 0.60),
+    /**
+     * Below this there is nothing worth bridging to, so the reply stops naming
+     * candidate clauses and only suggests topics. Measured out-of-corpus floor on
+     * this corpus is 0.466, set just under it so a borderline miss still gets a
+     * concrete nearest clause rather than a bare "no".
+     */
+    bridgeFloor: num('BRIDGE_FLOOR', 0.45),
+    /**
+     * How many corpus-derived topics a dead-end reply offers. Small enough to
+     * read, large enough that one irrelevant suggestion does not decide whether
+     * the user thinks the assistant is useless.
+     */
+    suggestionCount: num('SUGGESTION_COUNT', 6),
+    /**
+     * Reciprocal-rank-fusion weight for the keyword retriever.
+     *
+     * Hybrid retrieval runs the vector search and a Postgres full-text search and
+     * fuses the two rankings. RRF is used rather than a weighted score sum because
+     * cosine similarity and `ts_rank` are not on a comparable scale, so any
+     * numeric blend has to be re-tuned whenever either side changes. RRF only
+     * depends on rank order, which is stable.
+     */
+    rrfK: num('RRF_K', 60),
+    /**
+     * Master switch for the keyword arm. Kept configurable because the FTS index
+     * is an extra object in the database: a deployment that has not re-migrated
+     * still works with this off, instead of erroring on a missing index.
+     */
+    hybridSearch: bool('HYBRID_SEARCH', true),
+    keywordTopK: num('KEYWORD_TOP_K', 20),
   },
 
   corpus: {

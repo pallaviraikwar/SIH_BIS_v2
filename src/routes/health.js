@@ -1,5 +1,5 @@
 import express from 'express';
-import { config } from '../config.js';
+import { config, providerConfigured } from '../config.js';
 import { getCorpusStats } from '../store.js';
 
 export const healthRouter = express.Router();
@@ -14,22 +14,34 @@ healthRouter.get('/health', async (_req, res) => {
   const health = {
     status: 'ok',
     config: {
-      embedModel: config.gemini.embedModel,
-      genModel: config.gemini.genModel,
-      embedDims: config.gemini.dims,
+      // Active providers/models. This endpoint had the same bug as the startup
+      // banner: it reported `config.gemini.*`, so a fully local deployment
+      // advertised Gemini models and `embedDims: undefined`.
+      embedProvider: config.embedding.provider,
+      embedModel: config.embedding.model,
+      embedDims: config.embedding.dims,
+      genProvider: config.generation.provider,
+      genModel: config.generation.model,
+      genFallbackProvider: config.generation.fallbackEnabled
+        ? config.generation.fallbackProvider
+        : null,
       topK: config.retrieval.topK,
       similarityThreshold: config.retrieval.threshold,
+      softThreshold: config.retrieval.softThreshold,
+      bridgeFloor: config.retrieval.bridgeFloor,
       chunkChars: config.chunk.chars,
       chunkOverlap: config.chunk.overlap,
     },
-    apiKeyPresent: Boolean(config.gemini.apiKey),
+    apiKeyPresent: true,
     database: { connected: false },
     corpus: null,
     warnings: [],
   };
 
-  if (!health.apiKeyPresent) {
-    health.warnings.push('GEMINI_API_KEY is not set; every request will fail.');
+  if (!providerConfigured(config.generation.provider)) {
+    health.warnings.push(
+      `${config.generation.provider.toUpperCase()} is not configured; generation will fail.`
+    );
   }
 
   try {

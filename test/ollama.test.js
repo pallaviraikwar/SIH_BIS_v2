@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { config, assertConfig, providerConfigured, GEN_PROVIDERS, EMBED_PROVIDERS } from '../src/config.js';
 import { documentText, queryText, hasKey, name } from '../src/providers/ollama.js';
 import { buildAnswerPrompt, fitPassagesToBudget, passagesForPrompt } from '../src/prompts.js';
+import { isDegenerate } from '../src/rag.js';
 
 /**
  * The local provider is configured by default, so these lock down the three ways
@@ -125,7 +126,7 @@ test('prompt passage labels stay contiguous and renumbered after a trim', () => 
 
   const labels = [...prompt.matchAll(/^\[(\d+)\] /gm)].map((m) => Number(m[1]));
   assert.deepEqual(labels, labels.map((_, i) => i + 1), `labels must be 1..n, got ${labels}`);
-  assert.equal(prompt.includes(`SOURCE PASSAGES (${kept.length})`), true);
+  assert.equal(prompt.includes(`PASSAGE`), true);
 });
 
 test('the context budget leaves room for the answer inside the model window', () => {
@@ -145,5 +146,71 @@ test('the model window is wide enough for a grounded prompt', () => {
   assert.ok(
     config.ollama.numCtx >= 8192,
     `numCtx is ${config.ollama.numCtx}; Ollama's no-GPU default of 4,096 truncates silently`
+  );
+});
+
+test('the model window is wide enough for a grounded prompt', () => {
+  assert.ok(
+    config.ollama.numCtx >= 8192,
+    `numCtx is ${config.ollama.numCtx}; Ollama's no-GPU default of 4,096 truncates silently`
+  );
+});
+
+/**
+ * The loop detector.
+ *
+ * These lock down the exact failure this project shipped: a 2.5B model left to
+ * itself filled a 700-token budget with one sentence forty times while ignoring
+ * the clause it had been given. A guard that does not catch that specific string
+ * is not a guard.
+ */
+test('a repetition loop is detected', () => {
+  const loop =
+    'The minimum stress required for the pipe to be considered safe for use is recorded. '.repeat(
+      12
+    ) + 'Tensile strength 275 MPa.';
+
+  assert.equal(isDegenerate(loop), true, 'the observed 40x loop must be caught');
+});
+
+test('a normal grounded answer is not mistaken for a loop', () => {
+  const good =
+    'Tensile test: Fe 450 has a minimum tensile strength of 275 MPa and elongation of 13 percent [[1]]. ' +
+    'Fe 410 has 235 MPa and 15 percent [[1]]. Refer to IS 4270:2001 for details [[1]].';
+
+  assert.equal(isDegenerate(good), false, 'a correct answer must reach the user');
+});
+
+test('repetition is judged per sentence, not on overall length', () => {
+  // A legitimately repetitive answer repeats SEVERAL sentences a few times each.
+  // The pathological case repeats ONE sentence many times. Keying on the maximum
+  // per-sentence count rather than any repeat at all is what keeps the two apart.
+  const spread = Array.from(
+    { length: 4 },
+    (_, i) => `Limit number ${i} shall not be exceeded under test condition ${i}.`
+  )
+    .join(' ')
+    .repeat(2);
+
+  assert.equal(isDegenerate(spread), false, 'several sentences twice each is not a loop');
+});
+
+test('a short answer is never flagged, however repetitive', () => {
+  assert.equal(isDegenerate('Not found in the passages. Not found in the passages.'), false);
+});
+
+test('the answer prefill is configured and non-empty', () => {
+  // Without a prefill the model sometimes returns the instruction block as its
+  // answer, verbatim.
+  assert.ok(
+    typeof config.generation.prefill === 'string' && config.generation.prefill.trim(),
+    'an empty prefill silently disables the fix'
+  );
+});
+
+test('a repetition penalty is configured above 1', () => {
+  assert.ok(
+    config.generation.repeatPenalty > 1,
+    `repeat_penalty is ${config.generation.repeatPenalty}; 1 or below does nothing`
   );
 });

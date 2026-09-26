@@ -288,33 +288,55 @@ export async function listPendingDocuments() {
 }
 
 /**
- * Cosine nearest-neighbour search.
+ * Shape a chunk row into the object the rest of the app passes around.
  *
- * `<=>` is pgvector's cosine distance, so similarity is 1 - distance. The
- * threshold is applied in SQL so a corpus of irrelevant chunks never reaches the
- * prompt — the model is told to refuse when context is thin, and the cheapest
- * way to guarantee thin context is to not send it.
- *
- * `fetch` is deliberately larger than topK: the threshold may reject the top
- * hits, and `limit` is applied after filtering.
+ * `similarity` is always the true cosine similarity, never a keyword score and
+ * never a fused rank. That is deliberate: the reply bands (answer / soft /
+ * bridge / miss) are decided on cosine similarity, so anything that changes what a
+ * user is shown must be able to compare against the calibrated threshold. A fused
+ * score is an ordering device and is not on that scale.
  */
-export async function searchChunks({ embedding, topK = 5, threshold, docId = null }) {
+function mapChunk(r) {
+  return {
+    id: r.id,
+    docId: r.doc_id,
+    docTitle: r.doc_title,
+    pageFrom: r.page_from,
+    pageTo: r.page_to,
+    clause: r.clause,
+    chunkIndex: r.chunk_index,
+    content: r.content,
+    similarity: Number(r.similarity),
+  };
+}
+
+const CHUNK_COLUMNS = `c.id, c.doc_id, c.doc_title, c.page_from, c.page_to,
+       c.clause, c.chunk_index, c.content`;
+
+/**
+ * Cosine nearest-neighbour search, with a floor rather than a hard cutoff.
+ *
+ * This used to take `threshold` and apply it in SQL, which meant every result
+ * below the bar was destroyed inside the database before a reply could be
+ * composed. That is what made refusals static: with the near misses already gone,
+ * the only thing left to say is "I could not find that", because there is
+ * genuinely no evidence left to say anything else with.
+ *
+ * So the caller passes a `floor` (below it, nothing is worth showing) and gets
+ * the whole ranked band back. Bounding on the weak end is still worth doing in
+ * SQL — a large corpus would otherwise ship every chunk — but the bar that decides
+ * whether to *answer* is applied afterwards, in rag.js.
+ */
+export async function searchChunks({ embedding, topK = 5, floor, docId = null }) {
   // No default on the parameter itself. A default here silently becomes the real
   // threshold for any caller that forgets to pass one, and config.js should be
   // the only place this number is decided.
-  const min = threshold ?? config.retrieval.threshold;
+  const min = floor ?? config.retrieval.bridgeFloor;
   const fetchCount = Math.max(topK * 4, topK + 5);
 
   const { rows } = await query(
     `select
-        c.id,
-        c.doc_id,
-        c.doc_title,
-        c.page_from,
-        c.page_to,
-        c.clause,
-        c.chunk_index,
-        c.content,
+        ${CHUNK_COLUMNS},
         1 - (c.embedding <=> $1::vector) as similarity
     from bis_chunks c
     join bis_documents d on d.doc_id = c.doc_id and d.status = 'ready'
@@ -325,17 +347,305 @@ export async function searchChunks({ embedding, topK = 5, threshold, docId = nul
     [toVectorLiteral(embedding), min, docId, fetchCount]
   );
 
-  return rows.slice(0, topK).map((r) => ({
-    id: r.id,
-    docId: r.doc_id,
-    docTitle: r.doc_title,
-    pageFrom: r.page_from,
-    pageTo: r.page_to,
-    clause: r.clause,
-    chunkIndex: r.chunk_index,
-    content: r.content,
-    similarity: Number(r.similarity),
+  return rows.slice(0, topK).map(mapChunk);
+}
+
+/**
+ * Keyword search, for the part of the question space embeddings cannot reach:
+ * standard identifiers.
+ *
+ * A bare "IS 456" embeds at 0.546 — below the answer bar — because a number
+ * carries almost no meaning on its own and an embedding has no way to treat "456"
+ * as an identifier rather than a quantity. `search_tsv` matches it exactly, and the
+ * two results are fused.
+ *
+ * There is no fuzzy/trigram arm, and that is a measured decision rather than an
+ * omission. `word_similarity` was tried and removed: on 765-character chunks it
+ * returns the same score for everything. "brks" scored an identical 0.600 against
+ * "Tolerances", "thermocouple" and "Acoustical materials", and "cemnt" returned
+ * "solvent cement", "polyester resin" and "PVC fittings" at 0.667 — eight rows,
+ * all wrong, all ranked as matches. A retriever that returns wrong text confidently
+ * is worse than one that returns nothing, because the fusion then promotes the
+ * wrong row. Whole-word matching abstains on misspellings, which is the correct
+ * behaviour: those queries fall to the bridge band and get an honest near-miss.
+ *
+ * The cosine similarity is still computed here, from the vector the caller already
+ * holds, so a chunk found only by the keyword arm arrives with a real score and can
+ * be banded like any other.
+ */
+export async function searchByKeyword({ text, embedding, topK, docId = null }) {
+  const limit = topK ?? config.retrieval.keywordTopK;
+  const q = String(text ?? '').trim();
+  if (!q) return [];
+
+  const { rows } = await query(
+    `select
+        ${CHUNK_COLUMNS},
+        1 - (c.embedding <=> $3::vector) as similarity,
+        ts_rank_cd(c.search_tsv, websearch_to_tsquery('simple', $1)) as text_rank
+    from bis_chunks c
+    join bis_documents d on d.doc_id = c.doc_id and d.status = 'ready'
+    where ($2::text is null or c.doc_id = $2::text)
+      and c.search_tsv @@ websearch_to_tsquery('simple', $1)
+    order by ts_rank_cd(c.search_tsv, websearch_to_tsquery('simple', $1)) desc,
+             c.embedding <=> $3::vector
+    limit $4`,
+    [q, docId, toVectorLiteral(embedding), limit]
+  );
+
+  return rows.map((r) => ({
+    ...mapChunk(r),
+    textRank: Number(r.text_rank),
   }));
+}
+
+/**
+ * The standard identifier a query is asking about, if it names one.
+ *
+ * "IS 456", "is 456:2000" and "IS 10262 : 2019" all name a specific standard, and
+ * finding the clause that actually prints that identifier is a lookup, not a
+ * similarity judgement. The identifier is normalised to digits-and-year so the
+ * spacing variants in the corpus ("IS1 3360", "IS 3583:1988") still compare equal.
+ *
+ * Returns null for anything that is not an identifier, which is what keeps the band
+ * promotion narrow: a common-word tsvector hit must never be able to lift a reply
+ * into the answer band on its own.
+ */
+export function parseIsIdentifier(query) {
+  const m = String(query ?? '').match(/\bIS\s*:?\s*(\d{2,6})\s*(?::\s*(\d{4}))?/i);
+  if (!m) return null;
+  return { code: m[1], year: m[2] ?? null };
+}
+
+/**
+ * Whether a passage actually prints the identifier the query named.
+ *
+ * A containment test on the digit sequence, not on the formatted string, because
+ * the corpus is inconsistent about spacing and the year separator: "IS 456",
+ * "IS 456:2000" and "IS 456 : 2000" all appear, and one malformed extraction should
+ * not decide the band.
+ */
+export function passageHasIdentifier(passage, identifier) {
+  if (!identifier) return false;
+  const text = String(passage?.content ?? '');
+  if (!new RegExp(`\\b${identifier.code}\\b`).test(text)) return false;
+  if (identifier.year && !text.includes(identifier.year)) return false;
+  return true;
+}
+
+/**
+ * Reciprocal-rank fusion of the vector and keyword rankings.
+ *
+ * RRF rather than a weighted sum of scores because cosine similarity (0..1) and
+ * ts_rank/word_similarity are not on a comparable scale, and any numeric blend
+ * would need re-tuning whenever either retriever changes. RRF depends only on rank
+ * order, which is far more stable: `1 / (k + rank)` summed over the rankers that
+ * returned a given chunk.
+ *
+ * A chunk found by both arms outranks one found by either, which is the behaviour
+ * that matters here — a chunk whose text literally contains the words the user
+ * typed *and* which is semantically close is the one worth answering from.
+ */
+export function fuseRRF(vectorRows, keywordRows, { rrfK = config.retrieval.rrfK, limit } = {}) {
+  const scores = new Map();
+  const merged = new Map();
+
+  const contribute = (rows, rankKey) => {
+    rows.forEach((row, i) => {
+      const rank = i + 1;
+      const prior = scores.get(row.id) ?? { fused: 0, vectorRank: null, keywordRank: null };
+      prior.fused += 1 / (rrfK + rank);
+      if (rankKey === 'vector') prior.vectorRank = rank;
+      else prior.keywordRank = rank;
+      scores.set(row.id, prior);
+      // First writer wins, and the vector arm is passed first, so the row keeps
+      // the vector arm's fields as the base and the keyword arm only adds scores.
+      if (!merged.has(row.id)) merged.set(row.id, { ...row });
+    });
+  };
+
+  if (vectorRows?.length) contribute(vectorRows, 'vector');
+  if (keywordRows?.length) contribute(keywordRows, 'keyword');
+
+  return [...merged.values()]
+    .map((row) => ({ ...row, ...scores.get(row.id) }))
+    .sort((a, b) => {
+      if (b.fused !== a.fused) return b.fused - a.fused;
+      // Deterministic tie-break. Without it two equally-scored chunks could swap
+      // places between identical requests, and the Sources list would reorder
+      // itself under the user on refresh.
+      return b.similarity - a.similarity;
+    })
+    .slice(0, limit ?? vectorRows?.length ?? keywordRows?.length ?? 0);
+}
+
+/**
+ * The combined retrieval used by the answer path.
+ *
+ * Falls back to the vector arm alone when keyword search is disabled or fails.
+ * A missing FTS index is a deployment state, not a reason to fail the request:
+ * the vector path is the one that was working before hybrid search existed.
+ */
+export async function retrieveHybrid({ embedding, text, topK, docId = null }) {
+  const vectorRows = await searchChunks({
+    embedding,
+    topK,
+    floor: config.retrieval.bridgeFloor,
+    docId,
+  });
+
+  if (!config.retrieval.hybridSearch || !text) return vectorRows;
+
+  try {
+    const keywordRows = await searchByKeyword({ text, embedding, docId });
+    return fuseRRF(vectorRows, keywordRows, { limit: topK });
+  } catch (err) {
+    console.warn(
+      `[store] keyword retrieval unavailable (${err.message}); using vectors only. ` +
+        'Re-run the schema migration to create the FTS indexes.'
+    );
+    return vectorRows;
+  }
+}
+
+/**
+ * Real subject titles from the indexed corpus, for use as suggestions.
+ *
+ * A dead-end reply that names topics the corpus genuinely contains is the
+ * difference between a dead end and a redirect. These are read out of the chunk
+ * text rather than kept in a hand-written list, for one reason: a hardcoded list
+ * drifts. This project already had that failure — the sidebar offered
+ * certification, laboratories and hallmarking, none of which appear anywhere in
+ * SP 21, and all three were guaranteed refusals.
+ *
+ * The pattern below is the bibliographic form used throughout SP 21:
+ *
+ *   IS 3583:1988 Specification for clay paving bricks
+ *
+ * Titles are pulled straight out of the text, so a document that is added,
+ * removed or re-ingested changes the suggestions with no code edit. 759 titles
+ * parse cleanly on the current corpus.
+ *
+ * Truncation is a real hazard here: the character cap can cut a title mid-word
+ * ("Low density polyethylene pipes for potable water supp"), and a suggestion
+ * ending in a fragment reads as broken. `tidyTitle` trims back to the last whole
+ * word. Titles that are too short to survive that are dropped rather than shown
+ * as stubs.
+ */
+const IS_TITLE_PATTERN =
+  'IS\\s+([0-9]{2,6})\\s*:\\s*([0-9]{4})\\s+([A-Z][A-Za-z0-9 ,()\\-/&]{10,100})([A-Za-z0-9 ,()\\-/&]?)';
+
+export function tidyTitle(raw, truncated = false) {
+  let t = String(raw ?? '')
+    .replace(/IS\s+[0-9]{2,6}\s*:\s*[0-9]{4}\s+/i, '')
+    .replace(/\s*[-–—:;,]\s*$/, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  // Drop a trailing revision note. SP 21 writes these inline
+  // ("...enamels (second revision)") and they are index metadata, not part of
+  // what the standard is about, so they make poor suggestions.
+  //
+  // Whether that strip succeeded matters below, so compare rather than assign
+  // blind.
+  const withoutRevisionNote = t
+    .replace(/\s*\(\s*(?:first|second|third|fourth)?\s*revision\s*\)\s*$/i, '')
+    .trim();
+  const hadRevisionNote = withoutRevisionNote !== t;
+  t = withoutRevisionNote;
+
+  // Only repair a cut, and only when the pattern really did cut one.
+  //
+  // The character cap in IS_TITLE_PATTERN is unavoidable: titles are followed by
+  // descriptive prose with no delimiter, so something has to stop the match. But
+  // repairing unconditionally mangles every naturally short title — an earlier
+  // version turned "Specification for clay paving bricks" into "Specification for
+  // clay paving" because it trimmed at the last space regardless. `truncated` is
+  // the caller's signal that the overflow group matched, i.e. the cap did the cut.
+  if (!truncated) return t.length >= 12 ? t : '';
+
+  // Cut back to a whole word, but only if something is still actually left
+  // dangling. Two separate bugs lived in here:
+  //
+  //  - Cutting inside the repair loop made each pass trim an already-aligned
+  //    string again, one word per pass, until "Low density polyethylene pipes for
+  //    potable water supp" became "Low density polyethylene pipes".
+  //  - Cutting unconditionally after the revision-note strip cost another word,
+  //    because the strip had just left the string cleanly word-aligned: "...paints
+  //    and enamels (second revision)" lost " and enamels".
+  //
+  // A complete trailing parenthetical is a whole token, so removing it leaves
+  // nothing to repair. Only cut when no strip realigned things.
+  if (!hadRevisionNote) {
+    const lastSpace = t.lastIndexOf(' ');
+    if (lastSpace > 24) t = t.slice(0, lastSpace);
+  }
+
+  // Then repair to a fixpoint: an unbalanced bracket and a dangling function word
+  // can each expose the other, and a cap that severed a trailing "(second" is
+  // repaired here. Bounded so a pathological input cannot spin.
+  for (let pass = 0; pass < 4; pass++) {
+    const before = t;
+
+    // A trailing parenthetical still open at the end is a severed note.
+    const open = t.indexOf('(');
+    if (open !== -1 && t.indexOf(')', open) === -1) t = t.slice(0, open);
+
+    // A dangling function word is what a mid-phrase cut usually leaves.
+    t = t.replace(/\s+(for|of|and|or|the|to|in|with|on|at|by|from)$/i, '');
+
+    t = t.replace(/\s*[-–—:;,]\s*$/, '').trim();
+    if (t === before) break;
+  }
+
+  return t.length >= 12 ? t : '';
+}
+
+export async function corpusTopics({ limit = config.retrieval.suggestionCount } = {}) {
+  // Over-fetch so deduplication and filtering still leave `limit` usable titles.
+  const { rows } = await query(
+    `select distinct on (m[1]) m[1] as code, m[2] as year, m[3] as raw_title,
+            m[4] <> '' as truncated,
+            min(c.chunk_index) as first_seen
+       from bis_chunks c,
+            lateral regexp_matches(c.content, $1, 'g') as m
+      group by m[1], m[2], m[3], m[4]
+      order by m[1], min(c.chunk_index)`,
+    [IS_TITLE_PATTERN]
+  );
+
+  const seen = new Set();
+  const topics = [];
+  for (const r of rows) {
+    const title = tidyTitle(r.raw_title, r.truncated);
+    if (!title) continue;
+    const key = `${r.code}:${r.year}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    topics.push({ code: r.code, year: r.year, title, isCode: `IS ${r.code}:${r.year}` });
+    if (topics.length >= limit * 3) break;
+  }
+  return topics.slice(0, limit);
+}
+
+/**
+ * A stable-per-query, non-repeating slice of the corpus topics.
+ *
+ * The rotation matters: always suggesting the same six titles means a user who
+ * rejects all six has learned there is nothing else to try. Seeding the shuffle
+ * from the query means the same question always yields the same suggestions —
+ * stable under refresh, which a random shuffle would not be — while different
+ * questions explore different parts of the corpus.
+ */
+export function rotateTopics(topics, seed = '') {
+  if (topics.length <= 1) return topics;
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const start = Math.abs(h) % topics.length;
+  return [...topics.slice(start), ...topics.slice(0, start)];
 }
 
 export async function getCorpusStats() {
