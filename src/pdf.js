@@ -33,6 +33,10 @@ export function titleFromFilename(file) {
   // Index of the most recent "IS <number>" token, so a trailing year can be
   // attached to it even when a "Part 1" sits in between ("is16102-part-1-2012").
   let isCodeIndex = -1;
+  // BIS writes a part *inside* the designation — "IS 16102 (Part 1):2012" — so the
+  // part words are held back and folded into the code rather than being emitted
+  // as separate words, which used to yield the wrong "IS 16102:2012 Part 1".
+  let partNumber = null;
 
   for (let i = 0; i < words.length; i++) {
     const w = words[i];
@@ -54,6 +58,13 @@ export function titleFromFilename(file) {
       continue;
     }
 
+    // "part 1" belongs to the designation, not to the title words.
+    if (lower === 'part' && i + 1 < words.length && /^\d+$/.test(words[i + 1])) {
+      partNumber = words[i + 1];
+      i++;
+      continue;
+    }
+
     out.push(w.charAt(0).toUpperCase() + w.slice(1));
   }
 
@@ -61,7 +72,8 @@ export function titleFromFilename(file) {
   // "IS 14543" + "2024" -> "IS 14543:2024".
   for (let i = 0; i < out.length; i++) {
     if (isCodeIndex >= 0 && i > isCodeIndex && /^\d{4}$/.test(out[i])) {
-      out[isCodeIndex] = `${out[isCodeIndex]}:${out[i]}`;
+      const designation = partNumber ? `${out[isCodeIndex]} (Part ${partNumber})` : out[isCodeIndex];
+      out[isCodeIndex] = `${designation}:${out[i]}`;
       out.splice(i, 1);
       break;
     }
@@ -189,6 +201,114 @@ export async function listPdfs(dir = config.corpus.pdfDir, exclude = config.corp
 }
 
 /** Best-effort title: prefer an IS code found inside the document itself. */
+/**
+ * Front-matter lines that are set in capitals but are not the title.
+ *
+ * Every BIS publication opens with an RTI disclosure, a copyright line, an
+ * imprint address and a foreword, all in the same uppercase title-block style as
+ * the real title. Without this list the refiner picks "Disclosure to Promote the
+ * Right To Information" as the document's name, which is worse than no refinement
+ * at all.
+ */
+const TITLE_BLOCK_NOISE =
+  /^(disclosure|whereas|©|copyright|bureau of indian standards|manak bhavan|new delhi|price|first published|first revision|published by|printed by|foreword|contents|preface|introduction|committee|composition|composition of|representing members|udc|isbn|all rights|reproduction|edition|year of|print)/i;
+
+/** A line is title-block material if it is mostly capitals and long enough to be a title. */
+function isTitleLine(line) {
+  const t = line.trim();
+  if (t.length < 3 || t.length > 120) return false;
+  if (TITLE_BLOCK_NOISE.test(t)) return false;
+  const letters = t.replace(/[^A-Za-z]/g, '');
+  if (letters.length < 3) return false;
+  return letters === letters.toUpperCase();
+}
+
+/**
+ * Find a printed title block in the front matter.
+ *
+ * Handbooks and "summaries of standards" compilations — SP 21 here — carry their
+ * real name on a title page a few pages in, set as a run of capital lines:
+ *
+ *   SUMMARIES OF INDIAN STANDARDS
+ *   FOR
+ *   BUILDING MATERIALS
+ *
+ * The old refiner only read three pages looking for an "IS <n>:<year>" code, so
+ * it missed this entirely and fell back to the filename, producing the title
+ * "Is Sp 21 2005". These compilations are not IS standards at all; they are SP
+ * publications that summarise many of them, so there is no code to find.
+ *
+ * Returns the joined, title-cased name, or null when there is no title block.
+ */
+function findTitleBlock(pages) {
+  // Page 0-11 covers the RTI notice, title page, copyright and contents. Beyond
+  // that the front matter is over and capitals start meaning something else.
+  //
+  // A table of contents does not need special handling: its category headings are
+  // interleaved with the IS entries beneath them, and those entries are
+  // sentence-cased, so they break every run before it reaches two lines.
+  for (const page of pages.slice(0, 12)) {
+    const lines = page.text
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (!lines.length) continue;
+
+    let run = [];
+    for (const line of lines) {
+      if (isTitleLine(line)) {
+        run.push(line);
+        continue;
+      }
+      if (run.length >= 2) break; // a title block is a run, then prose begins
+      run = [];
+    }
+    if (run.length >= 2) {
+      const joined = run
+        .join(' ')
+        .replace(/\bFOR\b/g, 'for')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return toTitleCase(joined);
+    }
+  }
+  return null;
+}
+
+/** "SUMMARIES OF INDIAN STANDARDS" -> "Summaries of Indian Standards". */
+function toTitleCase(s) {
+  const small = new Set([
+    'for', 'of', 'and', 'the', 'in', 'on', 'to', 'a', 'an', 'or', 'by', 'at', 'from', 'with', 'for',
+  ]);
+  return s
+    .split(' ')
+    .map((w, i) => {
+      const bare = w.replace(/[^A-Za-z]/g, '');
+      // Keep genuine acronyms (BIS, SP, CED) and anything carrying digits, but
+      // only when they are short. Testing for "two capitals in a row" instead
+      // would preserve every word of a title that is set in caps, which is the
+      // normal case for a title page.
+      // Small words are checked first: "OF" and "FOR" are two capitals in a row
+      // and would otherwise qualify as acronyms.
+      if (small.has(w.toLowerCase())) return w.toLowerCase();
+
+      const isAcronym = bare.length <= 3 && bare === bare.toUpperCase() && /[A-Z]/.test(bare);
+      if (isAcronym) return w;
+      if (/\d/.test(w)) return w;
+
+      const head = w[0].toUpperCase();
+      // A word that arrives entirely in capitals came off a title page, so its
+      // tail must be lowered or "SUMMARIES" stays "SUMMARIES". A word that is
+      // already mixed case is left alone apart from its first letter, so a
+      // legitimately capitalised "Indian" does not become "INDIAN".
+      return bare === bare.toUpperCase() ? head + w.slice(1).toLowerCase() : head + w.slice(1);
+    })
+    .join(' ');
+}
+
+/** "SP 21" style designations, as used by BIS handbooks and compilations. */
+const SP_CODE = /\bSP\s*-?\s*(\d{1,3})\b/i;
+
 export function refineTitleFromContent(fallbackTitle, pages) {
   const head = pages
     .slice(0, 3)
@@ -196,7 +316,23 @@ export function refineTitleFromContent(fallbackTitle, pages) {
     .join('\n')
     .slice(0, 4000);
 
+  // A plain IS standard states its own designation on page 1; trust that.
   const m = IS_CODE.exec(head);
-  if (!m) return fallbackTitle;
-  return m[0].replace(/\s+/g, ' ').trim();
+  if (m) return m[0].replace(/\s+/g, ' ').trim();
+
+  const block = findTitleBlock(pages);
+  if (!block) return fallbackTitle;
+
+  // Prefix the designation when the document names one and the title does not
+  // already carry it, so the corpus lists "SP 21 — Summaries of ..." rather than
+  // a bare sentence that looks like a section heading.
+  //
+  // The filename counts as a source: "is.sp.21.2005.pdf" is how the designation
+  // usually arrives, since the title page of a compilation often never prints it.
+  const sp =
+    SP_CODE.exec(pages.slice(0, 12).map((p) => p.text).join('\n')) ?? SP_CODE.exec(fallbackTitle);
+  if (sp && !SP_CODE.test(block)) {
+    return `SP ${sp[1]} — ${block}`;
+  }
+  return block;
 }

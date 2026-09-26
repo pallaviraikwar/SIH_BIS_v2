@@ -12,8 +12,13 @@ import { SUPPORTED_LANGS } from '../src/config.js';
 const args = process.argv.slice(2);
 const langFlag = args.indexOf('--lang');
 const lang = langFlag !== -1 ? args[langFlag + 1] : 'en';
+// The flag positions are only meaningful when the flag is actually present.
+// With langFlag === -1, `i === langFlag + 1` is `i === 0`, which quietly dropped
+// the first word of every question asked without --lang — and turned a
+// single-word question into an empty string, so the script printed its usage
+// message and exited 1 for a perfectly valid query.
 const question = args
-  .filter((a, i) => !(i === langFlag || i === langFlag + 1))
+  .filter((a, i) => (langFlag === -1 ? true : !(i === langFlag || i === langFlag + 1)))
   .join(' ')
   .trim();
 

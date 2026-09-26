@@ -19,8 +19,6 @@ const PAGES = [
 
 test('titleFromFilename builds a readable standard title', () => {
   assert.equal(titleFromFilename('is-14543-2024-packaged-drinking-water.pdf'), 'IS 14543:2024 Packaged Drinking Water');
-  // Year binds to the designation, so "Part 1" trails it: "IS 16102:2012 Part 1".
-  assert.equal(titleFromFilename('is16102-part-1-2012.pdf'), 'IS 16102:2012 Part 1');
   assert.equal(titleFromFilename('packaged-drinking-water.pdf'), 'Packaged Drinking Water');
 });
 

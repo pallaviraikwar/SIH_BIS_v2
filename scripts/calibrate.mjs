@@ -40,7 +40,9 @@ async function main() {
   const corpus = await getCorpusStats();
 
   console.log(`\nCalibrating against ${corpus.docCount} document(s), ${corpus.chunkCount} chunk(s)`);
-  console.log(`model ${config.gemini.embedModel} @ ${config.gemini.dims} dims`);
+  console.log(
+    `model ${config.embedding.provider}/${config.embedding.model} @ ${config.embedding.dims} dims`
+  );
   console.log(`configured SIMILARITY_THRESHOLD = ${config.retrieval.threshold}\n`);
 
   const inScores = [];

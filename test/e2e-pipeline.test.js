@@ -29,7 +29,7 @@ mock.module('../src/store.js', {
   },
 });
 
-const { embedDocuments } = await import('../src/gemini.js');
+const { embedDocuments } = await import('../src/providers/index.js');
 const { chunkDocument, toEmbeddableText } = await import('../src/chunker.js');
 const { answerQuestion } = await import('../src/rag.js');
 const { config } = await import('../src/config.js');

@@ -1,4 +1,4 @@
-import { generateText } from './gemini.js';
+import { generateText } from './providers/index.js';
 import { SUPPORTED_LANGS } from './config.js';
 
 const LANG_NAMES = {
@@ -56,7 +56,7 @@ export async function toEnglishQuery(query, lang) {
   if (lang === 'en' || !looksNonLatin(query)) return { text: query, translated: false };
 
   try {
-    const text = await generateText({
+    const { text } = await generateText({
       systemInstruction: TRANSLATE_SYSTEM,
       prompt: `Question (in ${LANG_NAMES[lang]}):\n${query}`,
       temperature: 0,

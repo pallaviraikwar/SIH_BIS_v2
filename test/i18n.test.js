@@ -7,8 +7,14 @@ import {
   COVERAGE_HEADER,
   GREETING_REPLY,
   GENERATION_FAILED_REPLY,
+  TRANSLATION_FAILED_REPLY,
 } from '../src/prompts.js';
-import { renderNotFoundHtml, renderGreetingHtml, renderCoverageHtml } from '../src/render.js';
+import {
+  renderNotFoundHtml,
+  renderGreetingHtml,
+  renderCoverageHtml,
+  renderTranslationFailedHtml,
+} from '../src/render.js';
 
 const LANGS = ['en', 'hi', 'pa', 'te'];
 
@@ -63,6 +69,7 @@ test('every user-visible message table covers all four languages', () => {
     COVERAGE_HEADER,
     GREETING_REPLY,
     GENERATION_FAILED_REPLY,
+    TRANSLATION_FAILED_REPLY,
   };
 
   for (const [name, table] of Object.entries(tables)) {
@@ -104,4 +111,13 @@ test('greeting reply is localised and lists coverage', () => {
 test('an empty corpus omits the coverage section rather than showing a blank list', () => {
   const html = renderNotFoundHtml({ lang: 'en', coverageTitles: [] });
   assert.ok(!html.includes('Right now I can answer'), 'showed a coverage header with no documents');
+});
+
+test('a translation failure is localised in every language', () => {
+  for (const lang of LANGS) {
+    const html = renderTranslationFailedHtml({ lang });
+    const expected = TRANSLATION_FAILED_REPLY[lang];
+    assert.ok(html.includes(expected.replace(/&/g, '&amp;')), `${lang} message not rendered`);
+  }
+  assert.ok(/[ऀ-ॿ]/.test(renderTranslationFailedHtml({ lang: 'hi' })), 'Hindi message has no Devanagari');
 });

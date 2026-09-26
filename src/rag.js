@@ -1,13 +1,14 @@
 import { config } from './config.js';
-import { embedQuery, generateText } from './gemini.js';
+import { embedQuery, generateText } from './providers/index.js';
 import { searchChunks, listDocumentTitles } from './store.js';
 import { normaliseLang, toEnglishQuery } from './translator.js';
-import { ANSWER_SYSTEM, buildAnswerPrompt, GENERATION_FAILED_REPLY } from './prompts.js';
+import { ANSWER_SYSTEM, buildAnswerPrompt, passagesForPrompt, GENERATION_FAILED_REPLY } from './prompts.js';
 import {
   renderAnswerHtml,
   renderSourcesHtml,
   renderNotFoundHtml,
   renderGreetingHtml,
+  renderTranslationFailedHtml,
   modelSaysNotFound,
 } from './render.js';
 import { detectIntent } from './intent.js';
@@ -68,6 +69,32 @@ export async function answerQuestion({ query, lang: rawLang }) {
   const translation = await toEnglishQuery(query, lang);
   const tTranslate = Date.now() - t0;
 
+  // A non-English question we could not translate is not a question we can
+  // answer honestly. Embedding it in its own script would still return matches —
+  // the model is multilingual — so the failure would be invisible and the user
+  // would get a confident answer to a retrieval that was never on-topic.
+  if (translation.error) {
+    return {
+      answer: renderTranslationFailedHtml({ lang }),
+      sources: [],
+      notFound: false,
+      meta: {
+        lang,
+        intent: 'question',
+        translationUsed: false,
+        translationFailed: true,
+        retrievalQuery: null,
+        retrieved: 0,
+        notFound: false,
+        degraded: true,
+        reason: 'translation_failed',
+        detail: translation.error,
+        timings: { translate: tTranslate, retrieve: '0ms', generate: '0ms' },
+        total: ms(t0),
+      },
+    };
+  }
+
   const t1 = Date.now();
   const queryVector = await embedQuery(translation.text);
   const passages = await searchChunks({
@@ -99,13 +126,25 @@ export async function answerQuestion({ query, lang: rawLang }) {
   }
 
   const t2 = Date.now();
+
+  // Decided once, then used for the prompt *and* the rendered sources. If the
+  // prompt quietly received a subset, the model would cite `[n]` markers the user
+  // cannot find on screen, and a citation to a passage that is not shown is
+  // indistinguishable from an invented one.
+  const usedPassages = passagesForPrompt({ question: query, passages, lang });
+
   let answerText;
+  let genProvider = null;
+  let genDegraded = false;
   let generateError = null;
   try {
-    answerText = await generateText({
+    const gen = await generateText({
       systemInstruction: ANSWER_SYSTEM,
-      prompt: buildAnswerPrompt({ question: query, passages, lang }),
+      prompt: buildAnswerPrompt({ question: query, passages: usedPassages, lang }),
     });
+    answerText = gen.text;
+    genProvider = gen.provider;
+    genDegraded = gen.degraded;
   } catch (err) {
     generateError = err;
     console.error(`[rag] generation failed: ${err.message}`);
@@ -124,15 +163,15 @@ export async function answerQuestion({ query, lang: rawLang }) {
     return {
       answer:
         `<p style="margin:0 0 8px">${escapeForHtml(GENERATION_FAILED_REPLY[lang] ?? GENERATION_FAILED_REPLY.en)}</p>` +
-        renderSourcesHtml(passages, lang),
-      sources: passages.map(publicSource),
+        renderSourcesHtml(usedPassages, lang),
+      sources: usedPassages.map(publicSource),
       notFound: false,
       degraded: true,
       meta: {
         lang,
         translationUsed: translation.translated,
         retrievalQuery: translation.text,
-        retrieved: passages.length,
+        retrieved: usedPassages.length,
         notFound: false,
         degraded: true,
         reason: 'generation_failed',
@@ -145,18 +184,23 @@ export async function answerQuestion({ query, lang: rawLang }) {
   return {
     answer: renderAnswerHtml({
       answerText,
-      passages,
+      passages: usedPassages,
       lang,
       coverageTitles: await coverageTitles(),
     }),
-    sources: passages.map(publicSource),
+    sources: usedPassages.map(publicSource),
     answerText,
     notFound: modelSaysNotFound(answerText),
     meta: {
       lang,
       translationUsed: translation.translated,
       retrievalQuery: translation.text,
-      retrieved: passages.length,
+      retrieved: usedPassages.length,
+      // Which model actually answered. A fallback answer is still correct, but
+      // it is not the configured model, and a support report that says "Gemini is
+      // down" when OpenRouter answered is worth catching here.
+      generationProvider: genProvider,
+      generationDegraded: genDegraded,
       timings: { translate: tTranslate, retrieve: tRetrieve, generate: tGenerate },
       threshold: config.retrieval.threshold,
       total: ms(t0),

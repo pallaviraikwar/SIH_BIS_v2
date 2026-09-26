@@ -1,4 +1,10 @@
-import { NOT_FOUND_REPLY, GROUNDING_NOTE, COVERAGE_HEADER, GREETING_REPLY } from './prompts.js';
+import {
+  NOT_FOUND_REPLY,
+  GROUNDING_NOTE,
+  COVERAGE_HEADER,
+  GREETING_REPLY,
+  TRANSLATION_FAILED_REPLY,
+} from './prompts.js';
 import { normaliseLang } from './translator.js';
 
 /**
@@ -130,6 +136,12 @@ export function renderGreetingHtml({ lang = 'en', coverageTitles = [] } = {}) {
     `<p style="margin:0 0 8px">${escapeHtml(GREETING_REPLY[l] ?? GREETING_REPLY.en)}</p>` +
     renderCoverageHtml(coverageTitles, l)
   );
+}
+
+/** The query could not be translated, so nothing was retrieved. */
+export function renderTranslationFailedHtml({ lang = 'en' } = {}) {
+  const l = normaliseLang(lang);
+  return `<p style="margin:0">${escapeHtml(TRANSLATION_FAILED_REPLY[l] ?? TRANSLATION_FAILED_REPLY.en)}</p>`;
 }
 
 /**
