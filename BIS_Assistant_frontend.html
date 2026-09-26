@@ -80,6 +80,8 @@
     .result-card:hover { border-color: var(--primary); background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
     .result-card h4 { color: var(--primary); font-size: 13px; margin-bottom: 4px; }
     .result-card p { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+    .result-card .rc-sub { font-size: 11px; color: var(--primary); opacity: .75; margin-bottom: 4px; }
+    .result-card p:last-child { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
     .no-results { font-size: 13px; color: var(--text-muted); text-align: center; padding: 20px 0; }
     @media(max-width: 1024px) { .dashboard { grid-template-columns: 1fr; } .tools-panel { max-height: 350px; } }
     @media(max-width: 768px) { .sidebar { display: none; } .content { padding: 16px; } .welcome-bar { flex-direction: column; gap: 12px; } }
@@ -184,7 +186,7 @@
                 <div class="tools-header" data-i18n="searchHeader">Quick Directory</div>
                 <div class="search-box-wrapper">
                     <svg class="search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-                    <input type="text" id="stdSearch" data-i18n-placeholder="searchPlaceholder" placeholder="Search standard or product..." onkeyup="handleQuickSearch()">
+                    <input type="text" id="stdSearch" data-i18n-placeholder="searchPlaceholder" placeholder="Search the indexed documents..." oninput="handleQuickSearch()">
                 </div>
                 <div class="search-results-container" id="searchResults"></div>
             </div>
@@ -199,33 +201,53 @@
             appTitle: "BIS Assistant", appSubtitle: "Standards & Compliance", menuTitle: "Quick Links",
             navAssistant: "Assistant", navStandards: "Standards", navCertification: "Certification", navLabs: "Laboratories", navHallmark: "Hallmarking", clearChat: "Clear Chat",
             welcomeHeadline: "Hello! How can I assist you?", welcomeSub: "Your AI guide for Indian Standards and compliance.", statusOnline: "Systems Active",
-            chatPlaceholder: "Type your query or use voice...", searchHeader: "Quick Directory", searchPlaceholder: "Search code or product...",
+            chatPlaceholder: "Type your query or use voice...", searchHeader: "Quick Directory", searchPlaceholder: "Search the indexed documents...",
             botGreeting: "Welcome! 👋 I am the BIS Intelligent Assistant. <br><br>Whether you need <b>certification guidelines</b>, <b>hallmarking rules</b>, or to <b>search for a specific standard</b>, I am here to help.<br><br>What would you like to explore today?",
-            noResults: "No standards found."
+            noResults: "No matching passage in the indexed documents.",
+            docMeta: "{pages} pages · {chunks} passages",
+            passageMeta: "cl. {clause} · p. {pages} · {score}% match",
+            directoryHint: "Type to search the indexed documents, or pick one below.",
+            directorySearching: "Searching…",
+            directoryError: "Cannot reach the BIS server."
         },
         hi: {
             appTitle: "बीआईएस सहायक", appSubtitle: "मानक और अनुपालन", menuTitle: "त्वरित लिंक",
             navAssistant: "सहायक", navStandards: "मानक", navCertification: "प्रमाणन", navLabs: "प्रयोगशालाएं", navHallmark: "हॉलमार्किंग", clearChat: "चैट साफ़ करें",
             welcomeHeadline: "नमस्ते! मैं कैसे सहायता कर सकता हूँ?", welcomeSub: "भारतीय मानकों के लिए आपका एआई गाइड।", statusOnline: "सिस्टम सक्रिय",
-            chatPlaceholder: "प्रश्न टाइप करें या आवाज़ का उपयोग करें...", searchHeader: "त्वरित निर्देशिका", searchPlaceholder: "कोड या उत्पाद खोजें...",
+            chatPlaceholder: "प्रश्न टाइप करें या आवाज़ का उपयोग करें...", searchHeader: "त्वरित निर्देशिका", searchPlaceholder: "अनुक्रमित दस्तावेज़ों में खोजें...",
             botGreeting: "नमस्ते! 👋 मैं बीआईएस स्मार्ट सहायक हूँ। प्रमाणन, हॉलमार्किंग या मानक खोजने में मैं आपकी मदद कर सकता हूँ।",
-            noResults: "कोई मानक नहीं मिला।"
+            noResults: "अनुक्रमित दस्तावेज़ों में कोई मिलान नहीं मिला।",
+            docMeta: "{pages} पृष्ठ · {chunks} अंश",
+            passageMeta: "खंड {clause} · पृ. {pages} · {score}% मेल",
+            directoryHint: "खोजने के लिए टाइप करें, या नीचे से चुनें।",
+            directorySearching: "खोज रहे हैं…",
+            directoryError: "बीआईएस सर्वर तक नहीं पहुंच सकते।"
         },
         pa: {
             appTitle: "ਬੀਆਈਐਸ ਸਹਾਇਕ", appSubtitle: "ਮਿਆਰ ਅਤੇ ਪਾਲਣਾ", menuTitle: "ਤੁਰੰਤ ਲਿੰਕ",
             navAssistant: "ਸਹਾਇਕ", navStandards: "ਮਿਆਰ", navCertification: "ਪ੍ਰਮਾਣੀਕਰਣ", navLabs: "ਪ੍ਰਯੋਗਸ਼ਾਲਾਵਾਂ", navHallmark: "ਹਾਲਮਾਰਕਿੰਗ", clearChat: "ਚੈਟ ਸਾਫ਼ ਕਰੋ",
             welcomeHeadline: "ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਕਿਵੇਂ ਮਦਦ ਕਰਾਂ?", welcomeSub: "ਭਾਰਤੀ ਮਿਆਰਾਂ ਲਈ ਤੁਹਾਡਾ AI ਗਾਈਡ।", statusOnline: "ਸਿਸਟਮ ਸਰਗਰਮ",
-            chatPlaceholder: "ਸਵਾਲ ਟਾਈਪ ਕਰੋ ਜਾਂ ਆਵਾਜ਼ ਵਰਤੋ...", searchHeader: "ਤੁਰੰਤ ਡਾਇਰੈਕਟਰੀ", searchPlaceholder: "ਕੋਡ ਜਾਂ ਉਤਪਾਦ ਖੋਜੋ...",
+            chatPlaceholder: "ਸਵਾਲ ਟਾਈਪ ਕਰੋ ਜਾਂ ਆਵਾਜ਼ ਵਰਤੋ...", searchHeader: "ਤੁਰੰਤ ਡਾਇਰੈਕਟਰੀ", searchPlaceholder: "ਇੰਡੈਕਸ ਕੀਤੇ ਦਸਤਾਵੇਜ਼ਾਂ ਵਿੱਚ ਖੋਜੋ...",
             botGreeting: "ਸਤ ਸ੍ਰੀ ਅਕਾਲ! 👋 ਮੈਂ BIS ਸਹਾਇਕ ਹਾਂ। ਮੈਂ ਮਦਦ ਲਈ ਇੱਥੇ ਹਾਂ।",
-            noResults: "ਕੋਈ ਮਿਆਰ ਨਹੀਂ ਮਿਲਿਆ।"
+            noResults: "ਇੰਡੈਕਸ ਕੀਤੇ ਦਸਤਾਵੇਜ਼ਾਂ ਵਿੱਚ ਕੋਈ ਮੈਚ ਨਹੀਂ ਮਿਲਿਆ।",
+            docMeta: "{pages} ਪੰਨੇ · {chunks} ਅਨੁਕਰਮ",
+            passageMeta: "ਕਲਾਊਸ {clause} · ਪੰਨਾ {pages} · {score}% ਮਿਲਾਪ",
+            directoryHint: "ਖੋਜਣ ਲਈ ਟਾਈਪ ਕਰੋ, ਜਾਂ ਹੇਠਾਂ ਤੋਂ ਚੁਣੋ।",
+            directorySearching: "ਖੋਜ ਰਿਹਾ ਹੈ…",
+            directoryError: "BIS ਸਰਵਰ ਤੱਕ ਨਹੀਂ ਪਹੁੰਚ ਸਕਿਆ।"
         },
         te: {
             appTitle: "BIS అసిస్టెంట్", appSubtitle: "ప్రమాణాలు & సమ్మతి", menuTitle: "త్వరిత లింకులు",
             navAssistant: "సహాయకుడు", navStandards: "ప్రమాణాలు", navCertification: "ధృవీకరణ", navLabs: "ల్యాబ్‌లు", navHallmark: "హాల్‌మార్కింగ్", clearChat: "చాట్ క్లియర్ చేయండి",
             welcomeHeadline: "నమస్కారం! నేను ఎలా సహాయపడగలను?", welcomeSub: "భారతీయ ప్రమాణాల కోసం AI మార్గదర్శి.", statusOnline: "సిస్టమ్స్ యాక్టివ్",
-            chatPlaceholder: "ప్రశ్న టైప్ చేయండి లేదా వాయిస్ వాడండి...", searchHeader: "త్వరిత డైరెక్టరీ", searchPlaceholder: "కోడ్ లేదా ఉత్పత్తిని శోధించండి...",
+            chatPlaceholder: "ప్రశ్న టైప్ చేయండి లేదా వాయిస్ వాడండి...", searchHeader: "త్వరిత డైరెక్టరీ", searchPlaceholder: "ఇండెక్స్ చేసిన పత్రాల్లో వెతకండి...",
             botGreeting: "నమస్కారం! 👋 నేను BIS అసిస్టెంట్‌ని. సహాయం చేయడానికి సిద్ధంగా ఉన్నాను.",
-            noResults: "ప్రమాణాలు కనుగొనబడలేదు."
+            noResults: "ఇండెక్స్ చేసిన పత్రాల్లో సరిపోలిక కనిపించలేదు.",
+            docMeta: "{pages} పేజీలు · {chunks} భాగాలు",
+            passageMeta: "ఖండం {clause} · పేజీ {pages} · {score}% సరిపోలిక",
+            directoryHint: "వెతకడానికి టైప్ చేయండి, లేదా కింది నుండి ఎంచుకోండి.",
+            directorySearching: "వెతుకుతున్నాయి…",
+            directoryError: "BIS సర్వర్‌ను చేరుకోలేకపోయాము."
         }
     };
 
@@ -236,12 +258,10 @@
         hallmark: { en: "What are the rules for Gold Hallmarking?", hi: "गोल्ड हॉलमार्किंग के नियम क्या हैं?", pa: "ਗੋਲਡ ਹਾਲਮਾਰਕਿੰਗ ਦੇ ਨਿਯਮ ਕੀ ਹਨ?", te: "గోల్డ్ హాల్‌మార్కింగ్ నియమాలు ఏమిటి?" }
     };
 
-    const mockStandardsDB = [
-        { code: "IS 302", desc: "Safety of Household and Similar Electrical Appliances" },
-        { code: "IS 1011", desc: "Biscuits - Specification" },
-        { code: "IS 14543", desc: "Packaged Drinking Water" },
-        { code: "IS 1293", desc: "Plugs and Socket-Outlets up to 250 Volts" }
-    ];
+    // The server serves this same file at /, so it is normally same-origin. But
+    // it also has to keep working when opened directly from disk, where the
+    // origin is file:// and a relative "/api/..." would resolve to file:///api/...
+    const API_BASE = location.protocol === 'file:' ? 'http://localhost:3000' : '';
 
     let currentLang = 'en';
 
@@ -259,32 +279,129 @@
         });
         const greetingEl = document.getElementById('initialBotGreeting');
         if(greetingEl) greetingEl.innerHTML = t.botGreeting;
-        handleQuickSearch();
+        // Re-label the panel in the new language. The directory is an English-only
+        // semantic index, so a live query is not re-issued (it would spend another
+        // embedding call to return the same English matches).
+        if (lastDirectory) paintDirectory(); else loadCorpusList();
     }
 
-    function renderSearchResults(results) {
+    // The Quick Directory used to filter a hardcoded list of four Indian Standard
+    // codes. Every one of them was fabricated relative to the corpus: nothing in
+    // data/pdfs covers them, so the panel advertised answers the backend could not
+    // produce and clicking one got a refusal. It now reads the real index.
+    //
+    // Raw rows are kept in lastDirectory and formatted at paint time, so switching
+    // the UI language re-labels the panel without spending another embedding call.
+    let lastDirectory = null;
+
+    function directoryMessage(key) {
+        document.getElementById("searchResults").innerHTML =
+            `<div class="no-results">${escapeHTML(translations[currentLang][key])}</div>`;
+    }
+
+    function paintDirectory() {
         const container = document.getElementById("searchResults");
-        if (results.length === 0) {
-            container.innerHTML = `<div class="no-results">${translations[currentLang].noResults}</div>`;
+        const d = lastDirectory;
+
+        if (!d || d.rows.length === 0) {
+            container.innerHTML = `<div class="no-results">${escapeHTML(
+                d ? translations[currentLang].noResults : translations[currentLang].directoryHint)}</div>`;
             return;
         }
-        container.innerHTML = results.map(std => `
-            <div class="result-card" onclick="askQuestion('Tell me more about ${std.code}')">
-                <h4>${std.code}</h4>
-                <p>${std.desc}</p>
+
+        const t = translations[currentLang];
+        // Document titles and text come from PDFs, which are user input, and this
+        // is assigned via innerHTML — so everything interpolated is escaped. The
+        // click handler reads data-ask rather than an inline onclick, which also
+        // avoids an apostrophe in a title breaking out of a JS string literal.
+        container.innerHTML = d.rows.map(r => `
+            <div class="result-card" data-ask="${escapeHTML(r.ask)}">
+                <h4>${escapeHTML(r.title)}</h4>
+                <p class="rc-sub">${escapeHTML(r.subtitle(t))}</p>
+                <p>${escapeHTML(r.preview)}</p>
             </div>
         `).join('');
     }
 
+    function documentRows(documents) {
+        return documents.map(d => ({
+            title: d.docTitle,
+            ask: `Summarise ${d.docTitle}`,
+            subtitle: (l) => l.docMeta.replace('{pages}', d.pageCount).replace('{chunks}', d.chunkCount),
+            preview: d.sourceFile,
+        }));
+    }
+
+    function passageRows(results) {
+        return results.map(r => ({
+            title: r.docTitle,
+            ask: r.clause ? `Tell me about ${r.docTitle}, clause ${r.clause}` : `Tell me about ${r.docTitle}`,
+            subtitle: (l) => l.passageMeta
+                .replace('{clause}', r.clause || '—')
+                .replace('{pages}', r.pages.join('–'))
+                .replace('{score}', Math.round(r.similarity * 100)),
+            preview: r.preview,
+        }));
+    }
+
+    async function loadCorpusList() {
+        try {
+            const res = await fetch(`${API_BASE}/api/documents`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'failed');
+            lastDirectory = { rows: documentRows(data.documents) };
+            paintDirectory();
+        } catch (err) {
+            lastDirectory = null;
+            directoryMessage('directoryError');
+        }
+    }
+
+    // One search request costs one embedding call, so every keystroke would spend
+    // quota against a ~100/min free-tier cap. Debounce, and ignore very short
+    // fragments where the embedding carries no usable signal.
+    const SEARCH_DEBOUNCE_MS = 350;
+    const SEARCH_MIN_CHARS = 3;
+    let searchTimer = null;
+    let searchSeq = 0;
+
     function handleQuickSearch() {
-        const query = document.getElementById("stdSearch").value.trim().toLowerCase();
-        if (!query) {
-            renderSearchResults(mockStandardsDB.slice(0, 5));
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(runQuickSearch, SEARCH_DEBOUNCE_MS);
+    }
+
+    async function runQuickSearch() {
+        const q = document.getElementById("stdSearch").value.trim();
+        const seq = ++searchSeq;
+
+        if (q.length < SEARCH_MIN_CHARS) {
+            // No usable query: fall back to showing what is actually indexed.
+            lastDirectory = null;
+            loadCorpusList();
             return;
         }
-        const filtered = mockStandardsDB.filter(std => std.code.toLowerCase().includes(query) || std.desc.toLowerCase().includes(query));
-        renderSearchResults(filtered);
+
+        directoryMessage('directorySearching');
+        try {
+            // threshold is deliberately not passed, so the server's configured
+            // value stays the single source of truth.
+            const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}&k=8`);
+            const data = await res.json();
+            if (seq !== searchSeq) return; // a newer keystroke already superseded this
+            if (!res.ok) throw new Error(data.error || 'failed');
+            lastDirectory = { rows: passageRows(data.results) };
+            paintDirectory();
+        } catch (err) {
+            if (seq !== searchSeq) return;
+            lastDirectory = null;
+            directoryMessage('directoryError');
+        }
     }
+
+    document.getElementById("searchResults").addEventListener("click", (e) => {
+        const card = e.target.closest('.result-card');
+        if (card) askQuestion(card.dataset.ask);
+    });
 
     const chatBox = document.getElementById("chatBox");
     const userInput = document.getElementById("userInput");
@@ -305,7 +422,7 @@
         
         try {
             // Send request to our new Node.js server
-            const response = await fetch('http://localhost:3000/api/chat', {
+            const response = await fetch(`${API_BASE}/api/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ query: text, lang: currentLang })
@@ -353,7 +470,7 @@
     function escapeHTML(str) { return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)); }
     function setSection(el) { document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active')); el.classList.add('active'); }
 
-    window.onload = () => { handleQuickSearch(); };
+    window.onload = () => { loadCorpusList(); };
 </script>
 </body>
 </html>

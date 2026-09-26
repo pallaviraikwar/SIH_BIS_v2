@@ -1,0 +1,15 @@
+# Secrets — never commit. This repo is a PUBLIC fork.
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Source corpus — BIS standard PDFs are not ours to redistribute
+data/pdfs/*
+!data/pdfs/.gitkeep
+
+# Local artifacts
+*.log
+.DS_Store
