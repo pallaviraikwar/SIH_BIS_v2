@@ -398,7 +398,9 @@ generation and rendering are untouched, which is why the risk is low.
 | `server.js` | Starts everything, prints the active models and thresholds |
 | `BIS_Assistant_frontend.html` | The whole UI. Also holds all four language text tables |
 | `src/rag.js` | **The pipeline.** Decides which path a question takes |
-| `src/store.js` | Retrieval: vector search, full-text search, RRF, identifiers |
+| `src/store.js` | Retrieval: vector search, full-text search, corpus statistics, the ingest lifecycle |
+| `src/rank.js` | Reciprocal-rank fusion of the two retrieval arms. Pure, no database |
+| `src/text.js` | Pure text rules: reading an IS number out of a query, tidying a title, rotating suggestions |
 | `src/chunker.js` | Splits PDFs into clause-sized pieces at ingest |
 | `src/pdf.js` | Reads PDF text, removes running heads |
 | `src/prompts.js` | The instructions given to the model, and reply wording in 4 languages |
@@ -512,10 +514,22 @@ is the only duplicated rule in the feature. The server marks it in the
 `<details>` panel; the frontend re-marks it in the viewer. The viewer's search
 runs over already-escaped text on both sides, which is only sound because
 `escapeHtml()` in `src/render.js` and `esc()` in the frontend replace the same
-five characters the same way. The two implementations were checked against a
-real response and produce byte-identical output. Sending a third rendered copy
-inside a `data-` attribute was rejected as worse than one duplicated line of
-first-occurrence logic.
+five characters the same way. The two implementations are checked against each
+other in `test/citations.test.js` rather than left to a comment. Sending a third
+rendered copy inside a `data-` attribute was rejected as worse than one duplicated
+line of first-occurrence logic.
+
+**The escaping round trip is a security boundary, and it used to leak.** The
+server escapes the passage so that `data-excerpt` is safe as an attribute, but the
+frontend reads it back through `dataset`, which resolves the entities again, and
+then assigns the result to `innerHTML`. So the escaping has to be done *again* on
+the client, immediately before insertion, or a tag in the PDF text becomes a live
+element in the drawer. The frontend was not doing that: a passage containing
+`<img src=x onerror=...>` fired that handler for any reader who opened the
+citation. PDF text is untrusted input, the same way an answer is, and the panel was
+never affected because its markup is escaped and built in one place. The fix is
+that `markClause()` now escapes both the passage and the clause itself, which is
+also what makes it agree with `citationPanel()` for a clause containing `&`.
 
 The viewer ships closed, `aria-hidden` and `inert`, so its links are not in the
 tab order while it is off screen. `visibility` rather than `display` is used for
@@ -535,8 +549,13 @@ be checked without rendering: the `data-` attributes the viewer reads, that the
 `href` survives independently of them, that the frame carries no `src` in the
 markup, that the container is `inert` and `aria-hidden` when closed, that every
 `getElementById` in the viewer script resolves to a real element, and that the
-three close paths exist. Two mutations of the markup were tried to confirm those
-tests are not vacuous.
+three close paths exist. The viewer's `markClause()` is lifted out of the HTML and
+run against the server's `citationPanel()` over clauses containing `&`, `<`, `>`,
+`"` and `'`, plus one that is absent, so the two views of a citation cannot drift
+apart; the same test asserts a passage carrying a tag produces no live element. Two
+mutations were tried to confirm those tests are not vacuous: reverting
+`markClause()` to the unescaped version, and escaping only the clause. Both fail
+the suite.
 
 
 ---
@@ -552,6 +571,24 @@ tests are not vacuous.
 
 Documents are split at **clause boundaries** so a requirement can be cited on its
 own. A chunk is never split across a page break.
+
+A document row also carries a `status`, which is `pending` until every one of its
+chunks has an embedding and `ready` after that. An ingest run that is interrupted
+— killed, a PDF removed from the folder mid-run, the container restarted — leaves
+the row at `pending` with a partial set of chunks. Those chunks are not searchable
+and are never returned to a reader, so nothing is served wrong; the row is only
+incomplete, and `npm run ingest` reports it as such.
+
+There is no cleanup command because none is needed. The next `npm run ingest`
+resumes the partial work in place, and a pending document whose PDF has left the
+folder is discarded automatically (`pruneStaleDocuments` in `scripts/ingest.js`),
+which is safe even when the run that created it failed. A `pending` row that
+survives repeated runs means the same PDF is still there and still failing, so the
+ingest log is where to look, not the database.
+
+Worth knowing if you ever clean up by hand: `bis_chunks.doc_id` is a plain column
+with no foreign key to `bis_documents` (`db/schema.sql`), so nothing cascades in
+either direction and chunk rows have to be removed explicitly.
 
 ---
 

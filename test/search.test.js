@@ -44,6 +44,16 @@ mock.module('../src/store.js', {
       return CHUNKS.map((c, i) => ({ ...c, similarity: scores[i] ?? scores[scores.length - 1] })).slice(0, topK);
     },
     corpusTopics: async () => ({ topics: [] }),
+  },
+});
+
+/* The three string/ranking helpers rag.js imports now live in src/text.js, after
+ * they were moved out of store.js for having no database in them. They still have
+ * to be stubbed, and stubbing store.js no longer intercepts them — the real
+ * parseIsIdentifier would start promoting band from a query this file never
+ * intended to exercise. */
+mock.module('../src/text.js', {
+  namedExports: {
     rotateTopics: async () => ({ topics: [] }),
     parseIsIdentifier: () => null,
     passageHasIdentifier: () => false,

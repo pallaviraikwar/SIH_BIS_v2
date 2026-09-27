@@ -93,6 +93,13 @@ mock.module('../src/store.js', {
       { isCode: 'IS 14543:2024', code: '14543', year: '2024', title: 'Packaged Drinking Water' },
       { isCode: 'IS 1489:2015', code: '1489', year: '2015', title: 'Portland Pozzolana Cement' },
     ],
+  },
+});
+
+/* Moved out of store.js into src/text.js, so the store mock above no longer
+ * intercepts them. */
+mock.module('../src/text.js', {
+  namedExports: {
     rotateTopics: (topics) => topics,
     parseIsIdentifier: (q) => {
       const m = String(q ?? '').match(/\bIS\s+([0-9]{2,6})\s*(?::\s*([0-9]{4}))?/i);

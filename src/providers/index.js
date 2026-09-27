@@ -142,6 +142,3 @@ export async function translateText({ prompt, temperature, maxOutputTokens }) {
   const gen = await generateText({ prompt, temperature, maxOutputTokens });
   return { ...gen, raw: false };
 }
-
-export const activeEmbeddingProvider = () => config.embedding.provider;
-export const activeGenerationProvider = () => config.generation.provider;

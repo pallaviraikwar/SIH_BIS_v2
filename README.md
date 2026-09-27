@@ -130,6 +130,60 @@ Model output, document titles, and clause labels are all escaped server-side
 (`src/render.js`); `[[1]]` markers become citation chips and a Sources block is
 appended.
 
+### The layout
+
+One HTML file, no build step: `BIS_Assistant_frontend.html`, served at `/`.
+
+- **The reading column is 68ch and centred.** Uncapped, the transcript ran the
+  full width of the window — around 1600px of line on a wide monitor, well past
+  the 60-80ch that is comfortable to read. The composer is capped to the same
+  measure and centred on the same axis, so the Ask button sits beside the answer
+  rather than out in the empty space to the right of it. Both 68ch values are
+  literals in the stylesheet, and `test/ui-ux.test.js` reads the turn's copy and
+  asserts the composer matches it.
+- **The composer is fixed and the document scrolls.** That is why the transcript
+  cannot be scrolled programmatically with `scrollTop`, why an arriving answer is
+  only scrolled into view if you were already at the bottom, and why the main
+  column carries a `padding-bottom` to clear the composer.
+- **The header line carries counts, not titles.** It used to list every document
+  title in the corpus, so the height of the header grew with what had been
+  ingested — four rows on a desktop and eight on a phone, from five PDFs. The
+  titles are in the tooltip; the sidebar lists the same set anyway.
+- **Below 860px the sidebar is a drawer**, not `display: none`. It is the only
+  route to passage search and to the topic list, and hiding it removed both from
+  the device a standards answer is most likely read on. It opens from an "Index"
+  button in the header and closes with the × inside it, the scrim, or `Escape`;
+  it marks the rest of the page `inert` while open, and it closes itself if the
+  viewport widens, so a rotation cannot leave `inert` stuck on the app. The
+  sidebar's two long regions each cap themselves in `vh` and scroll, so the
+  search box and Clear transcript stay reachable on a short window.
+- **Touch targets are at least 44px at that width.** The send button was 36px and
+  a sidebar row 30px.
+
+### Colour
+
+Every colour in the page is a custom property, and there are four blocks that
+declare them: the base `:root`, a `prefers-color-scheme: dark` override, and one
+`:root[data-theme='…']` block per scheme for an explicit choice. The button in the
+header cycles **system → light → dark** and stores the answer in `localStorage`.
+
+Two things about that are worth knowing before editing a colour:
+
+- **"System" is the absence of `data-theme`, not a value.** The attribute is only
+  ever set for a deliberate choice, so `prefers-color-scheme` keeps answering on
+  its own for everyone who has not pressed the button — including on the first
+  paint, before any script runs, so there is no flash of the wrong theme.
+- **The forced blocks restate both palettes, and that duplication is the point.**
+  CSS has no way to say "use the dark values" other than a media query or a
+  selector, and a media query cannot see an attribute. `:root` is specificity
+  (0,1,0) and `:root[data-theme]` is (0,2,0), so a choice wins without
+  `!important` and regardless of block order. `color-scheme` is pinned per block
+  because no token can carry it — scrollbars, the search field and the PDF viewer
+  have to follow the chosen scheme. The cost is that a colour edited in one place
+  can be forgotten in another, so `test/ui-ux.test.js` diffs the forced blocks
+  against the originals and measures all four with the same contrast list. Edit
+  all of them or expect the suite to fail.
+
 ### Citations
 
 Every citation is verifiable. Clicking one opens a panel over the right-hand
@@ -149,9 +203,9 @@ The same passage is also available under each citation as a collapsed
 itself and the answer still makes sense with JavaScript disabled.
 
 Close the panel with the × button, by clicking outside it, or with `Escape`. It
-goes full-screen on narrow viewports, where the sidebar is hidden anyway. The
-document is only fetched when you open a citation, and released when you close
-it — the 7.5 MB file is never pulled in on page load.
+goes full-screen on narrow viewports, where the sidebar is a drawer and is closed
+by default. The document is only fetched when you open a citation, and released
+when you close it — the 7.5 MB file is never pulled in on page load.
 
 `page_from` is a **1-based PDF page index**, not the page number printed in the
 document's footer, so the two can disagree. The panel says so too.

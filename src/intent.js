@@ -43,7 +43,7 @@ const CHITCHAT = new Set([
  * in the set precisely because a typo must not be answered with a paragraph
  * about committee procedure.
  */
-export function normaliseChitChat(raw) {
+function normaliseChitChat(raw) {
   return String(raw ?? '')
     .toLowerCase()
     // Emoji and pictographs, then anything that is not a letter, mark, digit or

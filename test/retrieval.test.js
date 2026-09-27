@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { config } from '../src/config.js';
 import { bandFor, isLookupFragment, isDegenerate } from '../src/rag.js';
-import { fuseRRF, tidyTitle, parseIsIdentifier, passageHasIdentifier } from '../src/store.js';
+import { fuseRRF } from '../src/rank.js';
+import { tidyTitle, parseIsIdentifier, passageHasIdentifier } from '../src/text.js';
 
 const passage = (id, similarity, extra = {}) => ({
   id,

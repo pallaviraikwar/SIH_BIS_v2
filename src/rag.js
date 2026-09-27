@@ -1,6 +1,7 @@
 import { config } from './config.js';
 import { embedQuery, generateText } from './providers/index.js';
-import { searchChunks, listDocumentTitles, retrieveHybrid, corpusTopics, rotateTopics, parseIsIdentifier, passageHasIdentifier } from './store.js';
+import { searchChunks, listDocumentTitles, retrieveHybrid, corpusTopics } from './store.js';
+import { rotateTopics, parseIsIdentifier, passageHasIdentifier } from './text.js';
 import { normaliseLang, toEnglishQuery } from './translator.js';
 import { ANSWER_SYSTEM, buildAnswerPrompt, passagesForPrompt, GENERATION_FAILED_REPLY } from './prompts.js';
 import {

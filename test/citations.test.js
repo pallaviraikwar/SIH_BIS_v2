@@ -2,7 +2,7 @@ import { mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
-import { renderSourcesHtml, renderNearMissHtml, renderLocatedHtml, pageLink, citationPanel } from '../src/render.js';
+import { renderSourcesHtml, renderNearMissHtml, renderLocatedHtml, pageLink, citationPanel, escapeHtml } from '../src/render.js';
 import { config } from '../src/config.js';
 
 const UI_FILE = new URL('../BIS_Assistant_frontend.html', import.meta.url);
@@ -159,6 +159,141 @@ test('the marked span is the real clause, not a shifted one', () => {
   const html = citationPanel(p);
   assert.match(html, /<mark>5\.1 &amp; 5\.2<\/mark>/, 'the mark must wrap the escaped clause itself');
   assert.ok(html.includes('Requirement <mark>'), 'and start in the right place');
+});
+
+/* ------------------------------------------------------------------ *
+ * The drawer
+ *
+ * The citation drawer shows the same passage as the panel above, but it gets there
+ * by a different route: the server puts the passage in a data-excerpt attribute
+ * and the frontend rebuilds the highlight from it. That route has an escaping round
+ * trip in the middle which the panel does not have, and it used to have a hole.
+ * ------------------------------------------------------------------ */
+
+/* Pull a function out of the frontend and make it callable, rather than copying it
+ * here. A copy would keep passing after the real one changed, which is the failure
+ * this section exists to prevent, so a missing or renamed function has to fail. */
+const UI_SOURCE = readFileSync(UI_FILE, 'utf8');
+function clientFn(name, deps = {}) {
+  const decl = UI_SOURCE.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`));
+  assert.ok(decl, `${name}() must exist in BIS_Assistant_frontend.html`);
+  // deps are passed by name: new Function takes parameter names, not values.
+  const names = Object.keys(deps);
+  return new Function(...names, `return (${decl[0]});`)(...names.map((k) => deps[k]));
+}
+const clientEsc = clientFn('esc');
+const clientMark = clientFn('markClause', { esc: clientEsc });
+
+/* What a browser hands back for a data-* attribute: the entities are resolved
+ * again. Decoding &amp; last is what a browser does, and it is the difference
+ * between a passage that stays text and one that turns back into markup. */
+const decodeAttr = (s) =>
+  s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+
+/* The passage and clause as openCite() actually receives them: out of the rendered
+ * attribute, decoded. */
+function drawerInput(p) {
+  const html = pageLink(p, 'p. 827');
+  const attr = (name) => {
+    const m = html.match(new RegExp(`data-${name}="([\\s\\S]*?)"`));
+    assert.ok(m, `pageLink() must emit data-${name}`);
+    return decodeAttr(m[1]);
+  };
+  return [attr('excerpt'), attr('clause')];
+}
+
+/* The passage markup citationPanel() renders, without the <details> wrapper, so it
+ * can be compared against what the drawer builds. */
+function panelBody(p) {
+  const m = citationPanel(p).match(/<div class="cite-excerpt">([\s\S]*?)<\/div>/);
+  assert.ok(m, 'citationPanel() must render a .cite-excerpt');
+  return m[1];
+}
+
+test('the drawer marks the same span as the panel for the same citation', () => {
+  // Both places show one citation. If they disagree about where the clause is,
+  // the reader is shown two different quotations for one reference, and which one
+  // they check against the PDF depends on which one they happened to open.
+  const cases = [
+    ['2.8', '2.8 TESTING Ready-mixed paints shall be tested.'],
+    ['5.1 & 5.2', 'Requirement 5.1 & 5.2 governs this.'],
+    ['4.2 <5', 'Where 4.2 <5 the tolerance applies.'],
+    ['7.3 > 7.1', 'The ratio 7.3 > 7.1 shall not be exceeded.'],
+    ['clause "A"', 'See clause "A" for the limit.'],
+    ["it's", "Where it's unclear, ask the lab."],
+    ['99.9', 'Nothing like that appears in this passage.'],
+    ['', 'A passage with no clause at all.'],
+  ];
+  for (const [clause, content] of cases) {
+    const p = { ...PASSAGE, clause, content };
+    const [excerpt, gotClause] = drawerInput(p);
+    assert.equal(
+      clientMark(excerpt, gotClause),
+      panelBody(p),
+      `drawer and panel must agree for clause ${JSON.stringify(clause)}`
+    );
+  }
+});
+
+test('a passage cannot inject markup into the drawer', () => {
+  // PDF text is untrusted input. pageLink() escapes it so the attribute is safe,
+  // but reading the attribute back through `dataset` decodes it again, and the
+  // result goes into innerHTML -- so the frontend has to escape a second time. It
+  // did not, which meant any passage in the corpus carrying a tag fired that tag
+  // in the drawer of every reader who opened that citation. The panel never had
+  // the problem, because its markup is built and escaped in one place.
+  const attacks = [
+    '<img src=x onerror=alert(1)>',
+    '<script>alert(1)</script>',
+    '"><img src=x onerror=alert(1)>',
+    "<svg onload=alert(1)>",
+    '<iframe src=javascript:alert(1)>',
+  ];
+  for (const attack of attacks) {
+    const p = { ...PASSAGE, clause: '2.8', content: `Limits apply. ${attack} Clause 2.8 governs.` };
+    const [excerpt, clause] = drawerInput(p);
+    const out = clientMark(excerpt, clause);
+    for (const tag of ['img', 'script', 'svg', 'iframe']) {
+      assert.ok(
+        !new RegExp(`<${tag}[\\s>]`).test(out),
+        `a live <${tag}> reached the drawer from ${JSON.stringify(attack)}`
+      );
+    }
+    // The text still has to be there, escaped, or the evidence is not shown.
+    assert.ok(out.includes(escapeHtml(attack)), 'the passage must survive as visible, escaped text');
+  }
+});
+
+test('the drawer still shows the evidence for a passage full of markup', () => {
+  // The fix is not "strip tags" -- that would quietly alter quoted evidence, which
+  // is the one thing the citation exists to let the reader check.
+  const p = { ...PASSAGE, clause: '2.8', content: '2.8 applies. <b>Not bold</b> & not "quoted".' };
+  const [excerpt, clause] = drawerInput(p);
+  assert.equal(clientMark(excerpt, clause), '<mark>2.8</mark> applies. &lt;b&gt;Not bold&lt;/b&gt; &amp; not &quot;quoted&quot;.');
+});
+
+test('esc() and escapeHtml() replace the same five characters', () => {
+  // Both comments in the two files now say the drawer and the panel agree *because*
+  // these two functions escape identically. That is the invariant the previous
+  // comment asserted about a mechanism that did not exist, so it is worth pinning
+  // directly: if either side is extended, this fails instead of the two views of a
+  // citation quietly diverging.
+  const inputs = [
+    '&', '<', '>', '"', "'",
+    '&<>"\'',
+    '<img src=x onerror=alert(1)>',
+    'a & "b" \'c\'',
+    '&amp;', '&lt;', 'already &amp; escaped',
+    '',
+  ];
+  for (const input of inputs) {
+    assert.equal(clientEsc(input), escapeHtml(input), `esc and escapeHtml disagree on ${JSON.stringify(input)}`);
+  }
 });
 
 test('passage text is escaped before it reaches innerHTML', () => {

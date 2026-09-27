@@ -41,6 +41,11 @@ function makeEl() {
     classList: { add() {}, remove() {} },
     scrollIntoView() {},
     focus() {},
+    setAttribute(k, v) { this.attrs[k] = v; },
+    // Attribute writes are recorded rather than dropped, so a test can assert on
+    // what the page script told the DOM -- the theme button's accessible name is
+    // set this way, and an empty stub would make that assertion vacuous.
+    attrs: {},
     textContent: '',
     value: '',
   };
@@ -52,6 +57,7 @@ function boot() {
     searchResults: makeEl(),
     chatBox: makeEl(),
     topicList: makeEl(),
+    themeBtn: makeEl(),
   };
   const inputs = {
     stdSearch: Object.assign(makeEl(), { value: '' }),
@@ -60,6 +66,11 @@ function boot() {
   const requests = [];
   const pending = [];
   const bySelector = new Map();
+  // <html> as an attribute recorder, because the theme control's entire mechanism is
+  // one attribute: the page script sets data-theme for an explicit choice and
+  // removes it for "system". A plain {} would throw on the first set and, worse,
+  // would let a test that never looks here pass while the switch does nothing.
+  const rootAttrs = new Map();
   const doc = {
     getElementById: (id) => {
       // The i18n tables are read as textContent, the rest as elements. There is no
@@ -70,8 +81,8 @@ function boot() {
       return containers[id] || inputs[id] || makeEl();
     },
     querySelectorAll: () => [],
-    // The citation viewer marks everything outside its own overlay inert while it
-    // is open, and those three elements are addressed by selector rather than by
+    // The citation viewer marks everything outside its own overlay inert while it is
+    // open, and those three elements are addressed by selector rather than by
     // id, so the page script looks them up at load. Each selector resolves to one
     // stable element as it would in a browser; anything else resolves to null, so
     // the script's own .filter(Boolean) is exercised the way it is in a browser
@@ -83,12 +94,35 @@ function boot() {
     },
     addEventListener() {},
     createElement: makeEl,
-    documentElement: {},
+    documentElement: {
+      lang: '',
+      setAttribute: (k, v) => rootAttrs.set(k, v),
+      removeAttribute: (k) => rootAttrs.delete(k),
+      getAttribute: (k) => (rootAttrs.has(k) ? rootAttrs.get(k) : null),
+    },
   };
+
+  // A real localStorage, because the theme persists across visits and that is
+  // half of what the control does. Backed by a Map so a test can assert what was
+  // written without a second boot() having to observe the first one's writes.
+  const storage = new Map();
 
   const sandbox = {
     document: doc,
-    window: {},
+    // The index drawer closes itself when the viewport leaves the narrow range,
+    // which it watches with matchMedia at load, so the page script calls this
+    // before any of the sidebar logic under test can run. Handed a query that
+    // matches nothing and a change listener that is never called: the stub cannot
+    // resize, so all this has to do is exist and accept the subscription.
+    window: {
+      matchMedia: (query) => ({ matches: false, media: query, addEventListener() {} }),
+    },
+    localStorage: {
+      getItem: (k) => (storage.has(k) ? storage.get(k) : null),
+      setItem: (k, v) => storage.set(k, String(v)),
+      removeItem: (k) => storage.delete(k),
+    },
+    storage,
     location: { protocol: 'http:' },
     setTimeout,
     clearTimeout,
@@ -111,6 +145,7 @@ function boot() {
     results: containers.searchResults,
     topics: containers.topicList,
     box: inputs.stdSearch,
+    theme: containers.themeBtn,
     /** Simulates typing `text` one character at a time. */
     type(text) {
       this.box.value = '';
@@ -301,4 +336,43 @@ test('contains no hardcoded standard data', () => {
   for (const subject of ['certification', 'laborator', 'hallmark']) {
     assert.ok(!html.includes(subject), `${subject} is not in the corpus and must not be advertised`);
   }
+});
+
+test('the theme button drives the data-theme attribute, and system is its absence', async () => {
+  // This one is about the theme, and it lives in this file anyway: ui-ux.test.js
+  // reads the file as text, and the only way to know that pressing the button
+  // actually moves the attribute a real browser would watch is to run the page
+  // script. Everything here is a string assertion that would be satisfied by a
+  // paintTheme() that did nothing at all.
+  const app = boot();
+  const root = app.sandbox.document.documentElement;
+
+  // Nothing stored, so nothing forced: the media query has to be left alone, and
+  // "system" is expressed by the attribute not being there rather than by a value.
+  assert.equal(root.getAttribute('data-theme'), null, 'a first visit forces a theme');
+  assert.equal(app.theme.textContent, '◐', 'the button does not start on the system glyph');
+  assert.equal(app.theme.attrs['aria-label'], 'Theme: system');
+
+  app.sandbox.cycleTheme();
+  assert.equal(root.getAttribute('data-theme'), 'light', 'the first press did not leave "system"');
+  assert.equal(app.theme.textContent, '○');
+  assert.equal(app.sandbox.storage.get('bis-theme'), 'light', 'the choice was not remembered');
+
+  app.sandbox.cycleTheme();
+  assert.equal(root.getAttribute('data-theme'), 'dark');
+  assert.equal(app.theme.textContent, '●');
+  assert.match(app.theme.attrs['aria-label'], /dark/);
+
+  // And back round to the system, which has to *remove* the attribute: leaving it
+  // set to "auto" would pin the :root[data-theme] blocks with no rule of theirs.
+  app.sandbox.cycleTheme();
+  assert.equal(root.getAttribute('data-theme'), null, '"system" is stored as a value, so the media query is overridden forever');
+  assert.equal(app.theme.textContent, '◐');
+
+  // The label is translated with everything else, so the cycle cannot leave one
+  // language's name in the accessible name after a detected language switch.
+  app.sandbox.applyLanguage('hi');
+  assert.equal(app.theme.attrs['aria-label'], 'थीम: सिस्टम');
+  app.sandbox.cycleTheme();
+  assert.equal(app.theme.attrs['aria-label'], 'थीम: लाइट');
 });

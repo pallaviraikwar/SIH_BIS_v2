@@ -61,6 +61,61 @@
             --mark-edge: #f2e3bd33;
         }
     }
+    /* ---- forced themes ----
+       The two palettes above, restated, because there is no way to express "use the
+       dark values" in CSS except a media query or a selector: color-scheme changes
+       what the UA paints, and a media query cannot see an attribute. So the button
+       writes data-theme onto <html> and these two blocks key off it.
+
+       The duplication is the price of the design, not an oversight, and it buys three
+       things:
+         - specificity settles it. :root is (0,1,0) and :root[data-theme] is (0,2,0),
+           so an explicit choice always beats the system without !important and
+           without depending on which block below happens to come first in the file;
+         - color-scheme is pinned per block, because that is the one thing no token
+           can carry: scrollbars, the search field and the PDF viewer have to follow
+           the scheme that was chosen, not the one the OS reports;
+         - nothing changes for anyone who never opens the button. The media query is
+           still the whole answer for them, on the first paint and every one after.
+
+       The hazard this creates is drift -- a colour edited in the base palette and
+       forgotten here renders stale the moment a choice is made, and nothing in the
+       browser complains. So ui-ux.test.js holds this pair to the same contrast list
+       as the pair above and diffs their token names and values against the originals.
+       Edit all three, or expect the suite to fail. */
+    :root[data-theme='light'] {
+        color-scheme: only light;
+        --ink: #1a1a1a;
+        --ink-soft: #555;
+        --ink-faint: #6b6b6b;
+        --rule: #d8d8d8;
+        --rule-soft: #ececec;
+        --page: #ffffff;
+        --panel: #fafafa;
+        --link: #12507d;
+        --warn: #8a5300;
+        --warn-bg: #fdf6e8;
+        --mark-bg: #fef3c7;
+        --mark-ink: #555;
+        --mark-edge: #fcd34d55;
+    }
+
+    :root[data-theme='dark'] {
+        color-scheme: only dark;
+        --page: #15171b;
+        --panel: #1d2024;
+        --ink: #e8e9e7;
+        --ink-soft: #b9bdc1;
+        --ink-faint: #9aa0a6;
+        --rule: #33383d;
+        --rule-soft: #262a2e;
+        --link: #7cb8e8;
+        --warn: #e0a64a;
+        --warn-bg: #2a2317;
+        --mark-bg: #4a3c14;
+        --mark-ink: #f2e3bd;
+        --mark-edge: #f2e3bd33;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -81,9 +136,27 @@
         gap: 16px;
         flex-wrap: wrap;
     }
-    header h1 { font-size: 17px; font-weight: 600; }
-    header .sub { font-size: 13px; color: var(--ink-faint); margin-top: 2px; }
-    .head-right { display: flex; align-items: center; gap: 14px; }
+    header h1 {
+        font-size: 17px; font-weight: 600;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* Clamped to one line, and it has to be. This line used to carry every
+       document title in the corpus, joined with ", ", so the height of the header
+       was a function of the corpus: four rows on a desktop and eight on a phone,
+       from the five PDFs in data/pdfs. loadHealth puts counts here now and the
+       titles in the tooltip, and this is the backstop for the day a long
+       unbroken title is put back into it. `nowrap` rather than a soft wrap
+       because a header that grows pushes the whole transcript down the page. */
+    header .sub {
+        font-size: 13px; color: var(--ink-faint); margin-top: 2px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* min-width:0 on both, so the ellipsis above can actually take effect: a flex
+       item's default min-width is its content, and a titled header would push
+       .head-right off the window instead of truncating. */
+    .head-left { display: flex; align-items: center; gap: 10px; flex: 1 1 220px; min-width: 0; }
+    .head-title { min-width: 0; }
+    .head-right { display: flex; align-items: center; gap: 14px; flex: 0 1 auto; }
     .runtime { font-size: 12px; color: var(--ink-faint); text-align: right; line-height: 1.4; }
     /* Static, non-interactive hint. Deliberately not a <select>: there is nothing
        to choose, because the language follows the question. */
@@ -92,6 +165,28 @@
         margin-top: 2px; padding: 2px 8px; border: 1px solid var(--rule);
         border-radius: 4px; white-space: nowrap;
     }
+    /* The theme control. A glyph rather than the word "Dark", for two reasons: the
+       button has to name the mode it is in, and a cycling control makes that name
+       ambiguous either way (does the label say where you are, or where a press will
+       take you?), so the name lives in the title and the accessible label and the
+       glyph is the glanceable part. And a word would have to be written in four
+       scripts to sit where three glyphs will do.
+
+       The glyphs are three circles that differ only in fill -- empty, half, solid --
+       and not a sun and a moon. U+2600 takes emoji presentation on some platforms,
+       which would put the one orange glyph on the page and undo the flat,
+       document-first rule the rest of this block is written to; the geometric shapes
+       cannot. And fill survives a glance with no label, which "light" against "dark"
+       also does but a filled sun does not. Sized square so cycling cannot shift the
+       header. */
+    .theme-btn {
+        font: inherit; font-size: 15px; line-height: 1;
+        width: 30px; height: 30px; flex: 0 0 auto; padding: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        color: var(--ink-soft); background: var(--page);
+        border: 1px solid var(--rule); border-radius: 3px; cursor: pointer;
+    }
+    .theme-btn:hover { color: var(--ink); border-color: var(--ink-faint); }
     select {
         font: inherit; font-size: 13px; padding: 5px 8px;
         border: 1px solid var(--rule); border-radius: 3px;
@@ -119,6 +214,20 @@
     .side-block { margin-bottom: 22px; }
     .side-list { list-style: none; }
     .side-list li { margin: 0 0 1px; }
+    /* The two regions that can grow without bound each scroll themselves, and
+       their order was changed to match. Both used to sit below a topic list of up
+       to 18 entries (suggestionCount 6 x 3, from /api/topics) inside the one
+       100vh scroller, so on a short window both the search box and Clear
+       transcript were scrolled out of sight -- and the search box is the main way
+       to reach a passage. Search first, topics second, the action last, and no
+       region can push another off the panel. The aside keeps its own
+       max-height/overflow as the backstop for the case where they add up anyway.
+
+       The caps are in vh rather than px so they follow the window: 40vh of result
+       cards is roughly four of the eight, and 34vh of topics is a dozen. */
+    #searchResults { margin-top: 8px; max-height: 40vh; overflow-y: auto; }
+    #topicList { max-height: 34vh; overflow-y: auto; }
+    .side-foot { border-top: 1px solid var(--rule-soft); padding-top: 14px; }
     .side-btn {
         display: block; width: 100%; text-align: left;
         font: inherit; font-size: 13px; line-height: 1.4;
@@ -159,11 +268,27 @@
        width of the window -- roughly 1600px of line on a wide monitor, well past
        the 60-80ch that is comfortable to read. Capping the turn rather than just
        the prose means the question, the answer and the timing line share one
-       left-aligned measure instead of the question spanning the window while the
-       answer sat in a narrow column. It also caps the rule between turns, which is
-       the honest version: a full-width divider above 68ch of text reads as though
-       the page were wider than the content. */
-    .turn { padding: 16px 0; border-bottom: 1px solid var(--rule-soft); max-width: 68ch; }
+       measure instead of the question spanning the window while the answer sat in
+       a narrow column. It also caps the rule between turns, which is the honest
+       version: a full-width divider above 68ch of text reads as though the page
+       were wider than the content.
+
+       Centred, and every direct child of main is centred with it. The column used
+       to sit hard against the sidebar, so a wide monitor had ~700px of dead space
+       to the right of the answer with nothing in it. Centring is what lets the
+       composer centre on the same axis: main's content box and the composer's are
+       both "268px to the right edge, less 24px of padding", so one measure and
+       auto margins on both put the Ask button beside the text instead of 700px
+       away from it.
+
+       68ch is a literal in both rules rather than a token, on purpose:
+       ui-ux.test.js reads the number out of this block to hold the measure inside
+       the 55-80ch band, and the composer's copy is the same literal so the two
+       cannot drift. Change one, change both. */
+    .turn {
+        padding: 16px 0; border-bottom: 1px solid var(--rule-soft);
+        max-width: 68ch; margin-inline: auto;
+    }
     .turn:last-child { border-bottom: none; }
     .q { font-weight: 600; font-size: 15px; }
     /* break-word rather than anywhere for prose: anywhere can break inside an
@@ -311,19 +436,25 @@
     .cite-viewer-note { flex: 1; }
     .cite-viewer-newtab { color: var(--link); white-space: nowrap; }
 
-    /* The sidebar is already display:none at this width, so the viewer takes the
-       whole screen rather than covering the conversation it was opened from. */
+    /* The sidebar is a drawer at this width and closed by default, so the viewer
+       takes the whole screen rather than sitting beside a panel the reader has to
+       dismiss before reading the passage. */
     @media (max-width: 860px) {
         .cite-viewer-panel { width: 100vw; }
         .cite-viewer-excerpt { max-height: 30vh; }
     }
     @media (prefers-reduced-motion: reduce) {
         .cite-viewer, .cite-viewer-scrim, .cite-viewer-panel { transition: none; }
+        aside, .side-scrim { transition: none; }
     }
 
     .notice {
         border: 1px solid color-mix(in srgb, var(--warn) 32%, var(--page)); background: var(--warn-bg); color: var(--warn);
         padding: 9px 11px; border-radius: 3px; font-size: 13px; margin-bottom: 9px;
+        /* The same measure and the same centring as a turn, so a failure is a band
+           across the reading column rather than a small box floating in the middle
+           of a wide one. */
+        max-width: 68ch; margin-inline: auto;
     }
     .thinking { color: var(--ink-faint); font-size: 14px; }
 
@@ -332,7 +463,13 @@
         position: fixed; left: 268px; right: 0; bottom: 0;
         border-top: 1px solid var(--rule); background: var(--page); padding: 12px 24px;
     }
-    .composer .inner { display: flex; gap: 8px; }
+    /* Capped and centred to the reading column, matching .turn. Uncapped, the
+       input ran the full width of the window and put the Ask button out in the
+       empty space to the right of the answer, which is also where the eye is not.
+       Same 68ch literal, same reason it is a literal. */
+    .composer .inner {
+        display: flex; gap: 8px; max-width: 68ch; margin-inline: auto;
+    }
     .composer input {
         flex: 1; font: inherit; padding: 8px 10px;
         border: 1px solid var(--rule); border-radius: 3px; background: var(--page);
@@ -345,8 +482,76 @@
 
     .intro { color: var(--ink-soft); }
 
+    /* ---- the index drawer ----
+       Everything in this block is off above 860px, where the sidebar is a column
+       in the layout and needs no trigger. Below it, the sidebar is an overlay
+       rather than a column: it is the only route to passage search and to the
+       topic list, and `aside { display: none }` at this width made two features
+       simply not exist on the device people read a standards answer on. Same
+       contract as the citation viewer above, deliberately: the same scrim, the
+       same closed state as visibility rather than display so the panel can
+       transition and stays out of the tab order while it is off screen, the same
+       reduced-motion opt-out. */
+    .side-toggle, .side-top, .side-scrim { display: none; }
+    .side-toggle {
+        font: inherit; font-size: 13px; background: none; cursor: pointer;
+        border: 1px solid var(--rule); border-radius: 3px; padding: 6px 10px;
+        color: var(--ink-soft); white-space: nowrap; flex-shrink: 0;
+    }
+    .side-toggle:hover { border-color: var(--ink-faint); color: var(--ink); }
+    .side-x {
+        width: 32px; height: 32px; line-height: 1; font-size: 19px;
+        color: var(--ink-faint); background: none; cursor: pointer;
+        border: 1px solid var(--rule); border-radius: 3px;
+    }
+    .side-x:hover { color: var(--ink); background: var(--panel); }
+    .side-x:focus-visible, .side-toggle:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+
     @media (max-width: 860px) {
-        aside { display: none; }
+        .side-toggle { display: inline-flex; align-items: center; }
+        /* The drawer's own close control. A scrim tap is the other route and
+           Escape the third, but a scrim is not a control a first-time user looks
+           for, and Escape does not exist on a phone at all. */
+        .side-top { display: flex; justify-content: flex-end; margin: -4px 0 8px; }
+
+        .side-scrim {
+            display: block; position: fixed; inset: 0; z-index: 45;
+            background: color-mix(in srgb, var(--ink) 35%, transparent);
+            opacity: 0; visibility: hidden;
+            transition: opacity .18s ease, visibility 0s linear .18s;
+        }
+        .side-scrim.on { opacity: 1; visibility: visible; transition: opacity .18s ease; }
+
+        /* Above the scrim, and above the citation viewer, so the two cannot end
+           up in a stack that looks broken. They cannot actually be open at once
+           in any case: each makes the other's trigger inert while it is up, and
+           the drawer marks the transcript inert too. */
+        aside {
+            position: fixed; top: 0; bottom: 0; left: 0; z-index: 46;
+            width: min(300px, 86vw); max-height: none; overflow-y: auto;
+            background: var(--page);
+            box-shadow: 6px 0 24px color-mix(in srgb, var(--ink) 10%, transparent);
+            transform: translateX(-100%); visibility: hidden;
+            transition: transform .18s ease, visibility 0s linear .18s;
+        }
+        aside.open {
+            transform: translateX(0); visibility: visible;
+            transition: transform .18s ease;
+        }
+
+        /* 44px is the smallest box a finger reliably hits. The send button was
+           36px and a sidebar row 30px, which on a phone is a miss often enough to
+           be worth the extra row height. */
+        .composer button { padding: 11px 20px; }
+        .composer input { padding: 11px 10px; }
+        .side-btn { padding: 9px 7px; }
+        .dir-card { padding: 10px; }
+        .plain-btn { padding: 9px 12px; }
+        /* The theme control is the only button in the header, and 30px is a miss on
+           a phone. It grows here rather than the header getting taller, because it
+           is already as tall as the two text lines beside it. */
+        .theme-btn { width: 44px; height: 44px; }
+
         .composer { left: 0; }
         main { padding: 16px 16px 110px; }
     }
@@ -375,18 +580,43 @@
           nothing could select those two rules.
        - the send button's `disabled` state during a generation. It was a dead end
           -- a local model can take tens of seconds and there was no way to stop it.
-          The button is Stop now, and `inflight` is what guards a second Enter. */
+          The button is Stop now, and `inflight` is what guards a second Enter.
+       - `aside { display: none }` below 860px. It made the sidebar the one part
+         of the interface that did not exist on a phone, and the sidebar is the
+         only route to passage search and to the topic list -- the same two
+         features a hardcoded sidebar was rebuilt around. It is an overlay at that
+         width now, on the citation viewer's terms. See "the index drawer". */
 </style>
 </head>
 <body>
 
 <header>
-    <div>
-        <h1 data-i18n="appTitle">BIS Standards Assistant</h1>
-        <div class="sub" id="corpusLine"></div>
+    <div class="head-left">
+        <!-- The one way into the sidebar below 860px, where it is a drawer. Above
+             that width this is display:none, because the sidebar is already on
+             screen and a trigger there would be a second control that does
+             nothing. aria-expanded and aria-controls are the state contract;
+             openSidebar/closeSidebar own both ends of it. -->
+        <button type="button" class="side-toggle" id="sideToggle"
+                onclick="toggleSidebar()" aria-expanded="false" aria-controls="sidePanel"
+                data-i18n="openIndex" data-i18n-aria="openIndex">Index</button>
+        <div class="head-title">
+            <h1 data-i18n="appTitle">BIS Standards Assistant</h1>
+            <div class="sub" id="corpusLine"></div>
+        </div>
     </div>
     <div class="head-right">
         <div class="runtime" id="runtimeLine"></div>
+        <!-- Light, dark, or whatever the system says. The glyph is the current mode
+             and the title and accessible name are filled from the i18n tables by
+             paintTheme(), which also owns the data-theme attribute on <html>: the
+             attribute is only ever set for an explicit choice, so its absence is what
+             "system" means and the prefers-color-scheme block stays in charge
+             otherwise. No data-i18n here on purpose -- applyLanguage would overwrite
+             a label that depends on the mode. In the header rather than the sidebar
+             because it has to be reachable without opening the drawer. -->
+        <button type="button" class="theme-btn" id="themeBtn"
+                onclick="cycleTheme()" title="Theme: system">◐</button>
         <!-- No language selector. It existed only to drive the i18n tables below,
              and it had to be found before the interface would speak your language.
              The server now detects the script of what you type and reports it back
@@ -397,11 +627,19 @@
 </header>
 
 <div class="wrap">
-    <aside>
-        <div class="side-block">
-            <div class="side-h" data-i18n="topicsHeader">In this index</div>
-            <ul class="side-list" id="topicList"></ul>
-            <div class="side-note" id="topicNote"></div>
+    <!-- The sidebar's scrim. A sibling of the drawer rather than a child of it,
+         because it has to cover the page the drawer is drawn over. display:none
+         above 860px, so a stale .on left by a rotation cannot grey out the app. -->
+    <div class="side-scrim" id="sideScrim" aria-hidden="true"></div>
+
+    <!-- Order is load-bearing, not cosmetic: search first because it is the main
+         route to a passage, then the topic list, then the one destructive action.
+         See #searchResults and #topicList for the caps that stop either region
+         from pushing the others off the panel. -->
+    <aside id="sidePanel" data-i18n-aria="openIndex" aria-label="Index">
+        <div class="side-top">
+            <button type="button" class="side-x" data-side-close
+                    data-i18n-aria="closeIndex" aria-label="Close index">&times;</button>
         </div>
 
         <div class="side-block">
@@ -409,10 +647,18 @@
             <input type="text" class="side-input" id="stdSearch"
                    data-i18n-placeholder="searchPlaceholder"
                    placeholder="e.g. clay paving bricks" oninput="onSearchInput()">
-            <div id="searchResults" style="margin-top:8px"></div>
+            <div id="searchResults"></div>
         </div>
 
-        <button class="plain-btn" onclick="clearChat()" data-i18n="clearChat">Clear transcript</button>
+        <div class="side-block">
+            <div class="side-h" data-i18n="topicsHeader">In this index</div>
+            <ul class="side-list" id="topicList"></ul>
+            <div class="side-note" id="topicNote"></div>
+        </div>
+
+        <div class="side-foot">
+            <button class="plain-btn" onclick="clearChat()" data-i18n="clearChat">Clear transcript</button>
+        </div>
     </aside>
 
     <main id="chatBox"></main>
@@ -465,7 +711,7 @@
      A missing key in one language used to render as the literal text "undefined". -->
 <script type="application/json" id="i18n-en">{
   "appTitle": "BIS Standards Assistant",
-  "corpusLine": "{docs} · {pages} pages · {chunks} passages",
+  "corpusLine": "{docs} documents · {pages} pages · {chunks} passages",
   "runtimeLine": "{embed} · {gen}",
   "runtimeUnknown": "model information unavailable",
   "topicsHeader": "In this index",
@@ -474,6 +720,12 @@
   "searchHeader": "Search passages",
   "searchPlaceholder": "e.g. clay paving bricks",
   "clearChat": "Clear transcript",
+  "openIndex": "Index",
+  "closeIndex": "Close index",
+  "themeLabel": "Theme: {mode}",
+  "modeAuto": "system",
+  "modeLight": "light",
+  "modeDark": "dark",
   "closeSource": "Close source",
   "openNewTab": "Open in new tab",
   "pageNote": "The page number is the PDF page, not the printed folio.",
@@ -498,7 +750,7 @@
 
 <script type="application/json" id="i18n-hi">{
   "appTitle": "बीआईएस मानक सहायक",
-  "corpusLine": "{docs} · {pages} पृष्ठ · {chunks} अंश",
+  "corpusLine": "{docs} दस्तावेज़ · {pages} पृष्ठ · {chunks} अंश",
   "runtimeLine": "{embed} · {gen}",
   "runtimeUnknown": "मॉडल की जानकारी उपलब्ध नहीं",
   "topicsHeader": "इस सूची में",
@@ -507,6 +759,12 @@
   "searchHeader": "अनुच्छेद खोजें",
   "searchPlaceholder": "जैसे clay paving bricks",
   "clearChat": "वार्तालाप साफ़ करें",
+  "openIndex": "सूची",
+  "closeIndex": "सूची बंद करें",
+  "themeLabel": "थीम: {mode}",
+  "modeAuto": "सिस्टम",
+  "modeLight": "लाइट",
+  "modeDark": "डार्क",
   "closeSource": "स्रोत बंद करें",
   "openNewTab": "नए टैब में खोलें",
   "pageNote": "पृष्ठ संख्या PDF पृष्ठ है, मुद्रित पृष्ठ संख्या नहीं।",
@@ -531,7 +789,7 @@
 
 <script type="application/json" id="i18n-pa">{
   "appTitle": "ਬੀਆਈਐਸ ਮਿਆਰ ਸਹਾਇਕ",
-  "corpusLine": "{docs} · {pages} ਪੰਨੇ · {chunks} ਅਨੁਕਰਮ",
+  "corpusLine": "{docs} ਦਸਤਾਵੇਜ਼ · {pages} ਪੰਨੇ · {chunks} ਅਨੁਕਰਮ",
   "runtimeLine": "{embed} · {gen}",
   "runtimeUnknown": "ਮਾਡਲ ਦੀ ਜਾਣਕਾਰੀ ਉਪਲਬਧ ਨਹੀਂ",
   "topicsHeader": "ਇਸ ਸੂਚੀ ਵਿੱਚ",
@@ -540,6 +798,12 @@
   "searchHeader": "ਅਨੁਕਰਮ ਖੋਜੋ",
   "searchPlaceholder": "ਜਿਵੇਂ clay paving bricks",
   "clearChat": "ਗੱਲਬਾਤ ਸਾਫ਼ ਕਰੋ",
+  "openIndex": "ਸੂਚੀ",
+  "closeIndex": "ਸੂਚੀ ਬੰਦ ਕਰੋ",
+  "themeLabel": "ਥੀਮ: {mode}",
+  "modeAuto": "ਸਿਸਟਮ",
+  "modeLight": "ਲਾਈਟ",
+  "modeDark": "ਡਾਰਕ",
   "closeSource": "ਸਰੋਤ ਬੰਦ ਕਰੋ",
   "openNewTab": "ਨਵੇਂ ਟੈਬ ਵਿੱਚ ਖੋਲ੍ਹੋ",
   "pageNote": "ਪੰਨਾ ਨੰਬਰ PDF ਪੰਨਾ ਹੈ, ਛਪੀ ਪੰਨਾ ਨੰਬਰ ਨਹੀਂ।",
@@ -564,7 +828,7 @@
 
 <script type="application/json" id="i18n-te">{
   "appTitle": "BIS ప్రమాణాల సహాయకుడు",
-  "corpusLine": "{docs} · {pages} పేజీలు · {chunks} భాగాలు",
+  "corpusLine": "{docs} పత్రాలు · {pages} పేజీలు · {chunks} భాగాలు",
   "runtimeLine": "{embed} · {gen}",
   "runtimeUnknown": "మోడల్ వివరాలు అందుబాటులో లేవు",
   "topicsHeader": "ఈ జాబితాలో",
@@ -573,6 +837,12 @@
   "searchHeader": "భాగాల్లో వెతకండి",
   "searchPlaceholder": "ఉదా. clay paving bricks",
   "clearChat": "చాట్ తొలగించండి",
+  "openIndex": "జాబితా",
+  "closeIndex": "జాబితా మూసివేయండి",
+  "themeLabel": "థీమ్: {mode}",
+  "modeAuto": "సిస్టమ్",
+  "modeLight": "లైట్",
+  "modeDark": "డార్క్",
   "closeSource": "మూలం మూసివేయండి",
   "openNewTab": "కొత్త ట్యాబ్‌లో తెరవండి",
   "pageNote": "పేజీ సంఖ్య PDF పేజీ, ముద్రించిన పేజీ సంఖ్య కాదు.",
@@ -639,6 +909,133 @@ for (const host of [chatBox, document.getElementById('topicList'), document.getE
     });
 }
 
+/* ---------- index drawer ----------
+   Below 860px the sidebar is an overlay rather than a column, because it is the
+   only route to passage search and to the topic list and `display: none` at that
+   width made both of them absent on a phone. It keeps the same contract as the
+   citation viewer below, on purpose: inert background, focus moved in, focus
+   returned, Escape out, and three ways to close that do not involve a reload. */
+
+const sidePanel = document.getElementById('sidePanel');
+const sideToggle = document.getElementById('sideToggle');
+const sideScrim = document.getElementById('sideScrim');
+
+// 'main' rather than the viewer's '.wrap', and the difference is load-bearing:
+// the drawer is a child of .wrap, so marking .wrap inert would take the drawer
+// down along with the page it is meant to be covering.
+const sideBackground = ['header', 'main', '.composer']
+    .map((sel) => document.querySelector(sel))
+    .filter(Boolean);
+
+const NARROW_QUERY = '(max-width: 860px)';
+let sideOpen = false;
+
+function toggleSidebar() {
+    if (sideOpen) closeSidebar();
+    else openSidebar();
+}
+
+function openSidebar() {
+    if (sideOpen) return;
+    sideOpen = true;
+    sidePanel.classList.add('open');
+    sideScrim.classList.add('on');
+    sideToggle.setAttribute('aria-expanded', 'true');
+    // Background before focus, for the reason the viewer does it: the toggle is
+    // inside `header`, and the browser blurs it as `header` goes inert, so
+    // moving focus on the same tick leaves no frame with focus nowhere.
+    sideBackground.forEach((el) => el.setAttribute('inert', ''));
+    // The × , not the search box. Opening the drawer on a phone is as often about
+    // browsing the topic list, and focusing a text field raises the on-screen
+    // keyboard over the drawer the reader was trying to look at.
+    sidePanel.querySelector('.side-x').focus();
+}
+
+function closeSidebar() {
+    if (!sideOpen) return;
+    sideOpen = false;
+    sidePanel.classList.remove('open');
+    sideScrim.classList.remove('on');
+    sideToggle.setAttribute('aria-expanded', 'false');
+    // Lifted before the focus restore: the trigger is inside `header`, and
+    // focusing a descendant of an inert subtree silently does nothing.
+    sideBackground.forEach((el) => el.removeAttribute('inert'));
+    sideToggle.focus();
+}
+
+sideScrim.addEventListener('click', closeSidebar);
+
+// Two reasons to close from inside the panel. The × is the explicit control; the
+// second is the one that is easy to forget -- picking a topic or a search result
+// asks the question, and the answer renders in the transcript *behind* the
+// drawer, so leaving it open hides the thing that was just asked for.
+sidePanel.addEventListener('click', (e) => {
+    if (e.target.closest('[data-side-close], [data-ask]')) closeSidebar();
+});
+
+/* Closing on the way out of the narrow range. Above 860px the drawer rules stop
+   applying and the sidebar is a static column again -- but the `inert` set on the
+   background is script, not CSS, so without this a tablet rotating out of portrait
+   would leave the whole app dead to clicks and to focus. */
+window.matchMedia(NARROW_QUERY).addEventListener('change', (e) => {
+    if (!e.matches) closeSidebar();
+});
+
+/* ---------- theme ---------- */
+
+// Three modes rather than two, and that is the whole design decision. A two-state
+// toggle leaves anyone who wants the page to go back to following their system with
+// no way to say so, and "system" is the state every install starts in -- so it has
+// to be reachable, not just escapable.
+const THEME = {
+    auto: { glyph: '◐', nameKey: 'modeAuto' },
+    light: { glyph: '○', nameKey: 'modeLight' },
+    dark: { glyph: '●', nameKey: 'modeDark' },
+};
+const THEME_MODES = Object.keys(THEME);
+const THEME_STORE_KEY = 'bis-theme';
+const themeBtn = document.getElementById('themeBtn');
+let themeMode = 'auto';
+
+function readStoredTheme() {
+    // Wrapped because localStorage throws outright, not just returns null, in a
+    // sandboxed frame and in some privacy modes, and a theme switch is not worth a
+    // page that will not boot. An unreadable or unrecognised value falls back to
+    // "system", which is also the safe answer: it is the one mode that needs
+    // nothing remembered about the person who set it.
+    try {
+        const saved = localStorage.getItem(THEME_STORE_KEY);
+        return THEME_MODES.includes(saved) ? saved : 'auto';
+    } catch (e) {
+        return 'auto';
+    }
+}
+
+function paintTheme() {
+    // The attribute is only ever *set*, never cleared to a value: "system" is its
+    // absence. That is what lets prefers-color-scheme keep answering on its own for
+    // everyone who has not made a choice, including on the very first paint, before
+    // this script has run.
+    if (themeMode === 'auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', themeMode);
+
+    themeBtn.textContent = THEME[themeMode].glyph;
+    // One key for the whole label, so the button names the mode it is in rather than
+    // the one a press would move to. With a cycle, "what does this do" is only
+    // answerable by pressing it, and an accessible name has to stand on its own.
+    const label = fill('themeLabel', { mode: t(THEME[themeMode].nameKey) });
+    themeBtn.title = label;
+    themeBtn.setAttribute('aria-label', label);
+}
+
+function cycleTheme() {
+    themeMode = THEME_MODES[(THEME_MODES.indexOf(themeMode) + 1) % THEME_MODES.length];
+    paintTheme();
+    try {
+        localStorage.setItem(THEME_STORE_KEY, themeMode);
+    } catch (e) { /* not fatal: the page has already switched, it just will not persist */ }
+}
+
 /* ---------- in-page source viewer ---------- */
 
 const citeViewer = document.getElementById('citeViewer');
@@ -667,18 +1064,33 @@ const citeBackground = ['header', '.wrap', '.composer']
 // already renders a marked copy into the <details> panel and a second rendered
 // copy in an attribute would be a third thing to keep in sync.
 //
-// The search runs on already-escaped text on both sides. That works only because
-// the server's escapeHtml() and esc() replace the same five characters the same
-// way, so an escaped clause is findable in an escaped passage. A clause that is
-// absent simply gets no highlight, which is the same outcome the server produces.
+// The escaping round trip is the whole reason this function exists in this shape.
+// pageLink() writes escapeHtml(content) into data-excerpt so the *attribute* is
+// safe, but reading it back through `dataset` resolves the entities again, so
+// what arrives here is the raw passage -- and the next line puts it into innerHTML.
+// A PDF is untrusted input: without re-escaping, a passage containing
+// <img src=x onerror=...> would be parsed into a live element in this drawer. The
+// server's escapeHtml() cannot help with that, because decoding undoes it.
 //
-// Same rule as citationPanel() in src/render.js: the *first* occurrence only.
+// So the passage and the clause are both escaped here, and the search runs on the
+// escaped forms -- the same thing citationPanel() does on the server. That is what
+// makes esc() and escapeHtml() load-bearing: they have to replace the same five
+// characters the same way, or the drawer and the inline panel would mark different
+// spans for one citation and the same quote would look different in the two places.
+// test/citations.test.js runs this function against citationPanel() so they cannot
+// drift, and covers the injection case.
+//
+// A clause that is absent gets no highlight, which is the same outcome the server
+// produces. Same rule as citationPanel(): the *first* occurrence only.
 function markClause(excerpt, clause) {
-    if (!excerpt) return '';
-    if (!clause) return excerpt;
-    const at = excerpt.indexOf(clause);
-    if (at < 0) return excerpt;
-    return excerpt.slice(0, at) + '<mark>' + clause + '</mark>' + excerpt.slice(at + clause.length);
+    const text = String(excerpt == null ? '' : excerpt).trim();
+    if (!text) return '';
+    const body = esc(text);
+    const needle = clause ? esc(String(clause).trim()) : '';
+    if (!needle) return body;
+    const at = body.indexOf(needle);
+    if (at < 0) return body;
+    return body.slice(0, at) + '<mark>' + body.slice(at, at + needle.length) + '</mark>' + body.slice(at + needle.length);
 }
 
 function openCite(link) {
@@ -743,6 +1155,10 @@ document.getElementById('citeViewer').addEventListener('click', (e) => {
 
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeCite();
+    // Both surfaces, not just the viewer. Escape is the only keyboard route out of
+    // an overlay, and a drawer left open behind a closed viewer is a panel sitting
+    // over the page with the scrim still up.
+    if (e.key === 'Escape' && sideOpen) closeSidebar();
 });
 
 /* ---------- transcript ---------- */
@@ -1037,11 +1453,20 @@ async function loadHealth() {
 
         if (d.corpus) {
             const pages = (d.corpus.documents || []).reduce((n, x) => n + (x.pageCount || 0), 0);
-            document.getElementById('corpusLine').textContent = fill('corpusLine', {
-                docs: (d.corpus.documents || []).map((x) => x.docTitle).join(', ') || '—',
+            const titles = (d.corpus.documents || []).map((x) => x.docTitle);
+            const line = document.getElementById('corpusLine');
+            // Counts, not the whole title list. This line used to join every
+            // document title in the corpus with ", ", so the height of the header
+            // was a function of how much had been ingested: four rows on a desktop
+            // and eight on a phone, from the five PDFs in data/pdfs. The titles
+            // are still one hover away, which is all they were ever for -- the line
+            // identifies the corpus, and the sidebar lists the same set anyway.
+            line.textContent = fill('corpusLine', {
+                docs: titles.length,
                 pages,
                 chunks: d.corpus.chunkCount,
             });
+            line.title = titles.join(' · ');
         }
     } catch (err) {
         el.textContent = t('connError');
@@ -1082,6 +1507,10 @@ function applyLanguage(next) {
     });
     document.getElementById('topicNote').textContent = t('topicsNote');
     document.getElementById('stdSearch').placeholder = t('searchPlaceholder');
+    // The theme button's label contains a mode name, so it cannot go through the
+    // data-i18n pass above and has to be repainted here, like the two id-based lines
+    // next to it.
+    paintTheme();
     // Relabelling the search box invalidates whatever it was showing.
     if (!document.getElementById('stdSearch').value.trim()) dirNote(t('directoryHint'));
     input.focus();
@@ -1092,6 +1521,9 @@ function applyLanguage(next) {
 // after a manual language switch, and with detection driving the language there is
 // no manual switch to relabel for. Fetching once, here, is also what stops the
 // startup doubling where these ran twice on first paint.
+// The theme is read first because applyLanguage paints the button's label, and
+// that label names the mode.
+themeMode = readStoredTheme();
 applyLanguage('en');
 loadTopics();
 loadHealth();

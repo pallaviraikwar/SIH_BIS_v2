@@ -148,7 +148,7 @@ export function passagesForPrompt({ question, passages, lang = 'en' }) {
  * model then continues from the template's boundary token and emits a literal
  * "<s>" instead of an answer — verified, not theorised.
  */
-export const ANSWER_PREFILL = config.generation.prefill;
+const ANSWER_PREFILL = config.generation.prefill;
 
 export function buildAnswerPrompt({ question, passages, lang = 'en' }) {
   const target = langName(lang);

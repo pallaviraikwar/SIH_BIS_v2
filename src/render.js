@@ -68,9 +68,15 @@ export function pageLink(p, label) {
   if (!p?.docId || !Number.isFinite(p.pageFrom)) return text;
   const page = Math.max(1, Math.trunc(p.pageFrom));
   // The passage, escaped, so the in-page viewer can show the evidence without a
-  // second request. It is the same string `citationPanel` renders, and it is
-  // escaped by the same function, which is what lets the frontend re-find the
-  // clause by searching for its escaped form.
+  // second request. This escaping makes the *attribute* safe -- it is what stops a
+  // passage containing a quote or a tag from breaking out of data-excerpt. It is
+  // not what makes the clause findable: the frontend reads data-excerpt through
+  // `dataset`, which resolves the entities again, and then has to re-escape before
+  // assigning to innerHTML or a tag in the PDF text would become a live element in
+  // the drawer. It re-escapes with esc(), so esc() and escapeHtml() have to replace
+  // the same five characters the same way -- otherwise the drawer and this panel
+  // would mark different spans for one citation. See markClause() in
+  // BIS_Assistant_frontend.html.
   const excerpt = p.content ? escapeHtml(p.content) : '';
   return (
     `<a class="cite-link" href="/api/documents/${encodeURIComponent(p.docId)}/pdf#page=${page}" ` +
@@ -323,7 +329,7 @@ function passageExcerpt(content, maxChars = 180) {
  * documents turns a dead end into something actionable — and it is generated from
  * the database, so it cannot drift from what is actually loaded.
  */
-export function renderCoverageHtml(titles, lang = 'en') {
+function renderCoverageHtml(titles, lang = 'en') {
   const l = normaliseLang(lang);
   if (!titles?.length) return '';
 
