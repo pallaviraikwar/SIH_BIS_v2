@@ -267,10 +267,15 @@ export function renderSourcesHtml(passages, lang = 'en', passedToModel = 0) {
 /**
  * Real topics, rendered as question chips.
  *
- * This is the payload that makes a dead end useful. Every entry is a standard
- * title parsed out of the indexed text, so the list cannot advertise a subject the
- * corpus lacks — the exact failure the old sidebar had, where certification,
- * laboratories and hallmarking were all offered and none of them existed in SP 21.
+ * This is the payload that makes a dead end useful. Every entry is a clause
+ * that exists in the index, so the list cannot advertise a subject the corpus
+ * lacks — the exact failure the old sidebar had, where certification,
+ * laboratories and hallmarking were all offered and none of them existed.
+ *
+ * Topics are balanced across documents and each carries its own, so the chips
+ * show the corpus is wider than any one of its parts. They are also numbered
+ * clauses rather than snippets of text, because two documents extract their
+ * Devanagari badly and a chip is the last place that should surface.
  *
  * Rendered as `<button>`s with the question in the text, so the frontend can
  * delegate one click handler and the reply is readable when the styling is
@@ -283,12 +288,12 @@ export function renderSuggestionsHtml(topics, lang = 'en') {
 
   const items = topics
     .map((t) => {
-      const ask = `What is ${t.isCode} ${t.title}?`;
+      const ask = `What does clause ${t.title} of ${t.docTitle} say?`;
       return (
         `<li style="margin:4px 0">` +
         `<button type="button" class="ask-suggestion" data-ask="${escapeHtml(ask)}" ` +
         `style="background:none;border:none;padding:0;font:inherit;color:#1a56b5;text-align:left;cursor:pointer;text-decoration:underline">` +
-        `${escapeHtml(t.title)} <span style="color:#6b7280;text-decoration:none">(${escapeHtml(t.isCode)})</span>` +
+        `clause ${escapeHtml(t.title)} <span style="color:#6b7280;text-decoration:none">(${escapeHtml(t.docTitle)})</span>` +
         `</button></li>`
       );
     })

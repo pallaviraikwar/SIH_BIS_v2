@@ -88,11 +88,11 @@ mock.module('../src/store.js', {
     getCorpusStats: async () => ({ chunkCount: CHUNKS.length, docCount: 3, documents: [] }),
     replaceDocumentChunks: async () => {},
     listDocumentTitles: async () => DOCS.map((d) => d.title),
-    corpusTopics: async () => [
-      { isCode: 'IS 1011:2002', code: '1011', year: '2002', title: 'Biscuits' },
-      { isCode: 'IS 14543:2024', code: '14543', year: '2024', title: 'Packaged Drinking Water' },
-      { isCode: 'IS 1489:2015', code: '1489', year: '2015', title: 'Portland Pozzolana Cement' },
-    ],
+      corpusTopics: async () => [
+        { clause: '1', title: '1', docId: 'sp21', docTitle: 'SP 21' },
+        { clause: '2', title: '2', docId: 'bis_ca', docTitle: 'BIS CA 12032019' },
+        { clause: '3', title: '3', docId: 'hallmarking', docTitle: 'Hallmarking Regulations' },
+      ],
   },
 });
 

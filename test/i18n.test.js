@@ -126,22 +126,27 @@ test('a near miss with no passage still reads as a reply, not a crash', () => {
   assert.ok(html.length > 0);
 });
 
-test('suggestions render as clickable chips carrying their own question', () => {
-  const html = renderSuggestionsHtml([
-    { isCode: 'IS 3583:1988', title: 'Specification for clay paving bricks' },
-  ], 'en');
-  assert.match(html, /class="ask-suggestion"/);
-  assert.match(html, /data-ask="/);
-  assert.match(html, /IS 3583:1988/);
-  assert.match(html, /clay paving bricks/);
-});
+  test('suggestions render as clickable chips carrying their own question', () => {
+    const html = renderSuggestionsHtml([
+      { clause: '4.2', title: '4.2', docId: 'sp21', docTitle: 'SP 21' },
+    ], 'en');
+    assert.match(html, /class="ask-suggestion"/);
+    assert.match(html, /data-ask="/);
+    assert.match(html, /clause 4\.2/);
+    assert.match(html, /SP 21/);
+    // The chip must name its own document, or the list looks like one corpus
+    // when it is five.
+    assert.match(html, /What does clause 4\.2 of SP 21 say\?/);
+  });
 
-test('suggestion titles are escaped', () => {
-  const html = renderSuggestionsHtml([
-    { isCode: 'IS 1:2000', title: '<script>alert(1)</script>' },
-  ], 'en');
-  assert.ok(!html.includes('<script>'));
-});
+  test('suggestion titles are escaped', () => {
+    const html = renderSuggestionsHtml([
+      { clause: 'x', title: '<script>alert(1)</script>', docId: 'd', docTitle: '<b>doc</b>' },
+    ], 'en');
+    assert.ok(!html.includes('<script>'));
+    assert.ok(!html.includes('<b>doc</b>'));
+  });
+
 
 test('no suggestions means no empty section', () => {
   assert.equal(renderSuggestionsHtml([], 'en'), '');
@@ -161,15 +166,16 @@ test('a located reply shows the entries it found', () => {
   assert.match(html, /FLY ASH BASED/);
 });
 
-test('a greeting lists coverage and topics rather than only greeting', () => {
-  const html = renderGreetingHtml({
-    lang: 'en',
-    coverageTitles: ['SP 21'],
-    topics: [{ isCode: 'IS 3583:1988', title: 'clay paving bricks' }],
+  test('a greeting lists coverage and topics rather than only greeting', () => {
+    const html = renderGreetingHtml({
+      lang: 'en',
+      coverageTitles: ['SP 21'],
+      topics: [{ clause: '4.2', title: '4.2', docId: 'sp21', docTitle: 'SP 21' }],
+    });
+    assert.match(html, /SP 21/);
+    assert.match(html, /clause 4\.2/);
   });
-  assert.match(html, /SP 21/);
-  assert.match(html, /IS 3583:1988/);
-});
+
 
 /* ------------------------------------------------------------------ *
  * The provenance claim

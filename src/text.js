@@ -4,9 +4,8 @@
  * Pure string work with no database, kept out of store.js for the same reason as
  * rank.js. `parseIsIdentifier` and `passageHasIdentifier` are the rules for what
  * counts as a standard reference, which is domain knowledge rather than storage;
- * `tidyTitle` is a repair function whose behaviour is mostly about the edges of
- * what the title regex captured, and the comment on IS_TITLE_PATTERN in store.js
- * is the other half of that story.
+ * `tidyTitle` is a repair function for standard titles, and the comment on
+ * `corpusTopics` in store.js is the other half of that story.
  */
 
 export function tidyTitle(raw, truncated = false) {

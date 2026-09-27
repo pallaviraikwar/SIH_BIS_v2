@@ -421,56 +421,129 @@ export async function retrieveHybrid({ embedding, text, topK, docId = null }) {
 }
 
 /**
- * Real subject titles from the indexed corpus, for use as suggestions.
+ * Real topics from the indexed corpus, for use as suggestions.
  *
  * A dead-end reply that names topics the corpus genuinely contains is the
- * difference between a dead end and a redirect. These are read out of the chunk
- * text rather than kept in a hand-written list, for one reason: a hardcoded list
+ * difference between a dead end and a redirect. These are read out of the index
+ * rather than kept in a hand-written list, for one reason: a hardcoded list
  * drifts. This project already had that failure — the sidebar offered
  * certification, laboratories and hallmarking, none of which appear anywhere in
  * SP 21, and all three were guaranteed refusals.
  *
- * The pattern below is the bibliographic form used throughout SP 21:
+ * Topics are clauses, and they are balanced across documents. Both halves of
+ * that matter, and both were learned the hard way.
+ *
+ * The previous definition scraped standard designations out of the text:
  *
  *   IS 3583:1988 Specification for clay paving bricks
  *
- * Titles are pulled straight out of the text, so a document that is added,
- * removed or re-ingested changes the suggestions with no code edit. 759 titles
- * parse cleanly on the current corpus.
+ * That is the bibliographic form used throughout SP 21, and SP 21 is a
+ * catalogue of standards, so it is the only document in the corpus that contains
+ * any. On the current corpus that pattern yields 519 topics, of which 517 come
+ * from SP 21: BIS CA contributes 2, and the Hallmarking Regulations, the
+ * Guidelines of Labelling and the BIS Act contribute nothing at all. The drawer
+ * showed 18 chips and every one of them was SP 21. Four of five documents were
+ * invisible, which is the opposite of what a browser is for.
  *
- * Truncation is a real hazard here: the character cap can cut a title mid-word
- * ("Low density polyethylene pipes for potable water supp"), and a suggestion
- * ending in a fragment reads as broken. `tidyTitle` trims back to the last whole
- * word. Titles that are too short to survive that are dropped rather than shown
- * as stubs.
+ * So a topic is now a clause, which every document has: 819 distinct clause
+ * numbers, 99%+ of chunks in all five documents. The clause number is the label
+ * rather than a snippet of the text because two documents extract their
+ * Devanagari badly — BIS CA and the Hallmarking Regulations are riddled with
+ * split conjuncts, and a chip is the last place that damage should surface.
+ * The clause is always clean.
  */
-const IS_TITLE_PATTERN =
-  'IS\\s+([0-9]{2,6})\\s*:\\s*([0-9]{4})\\s+([A-Z][A-Za-z0-9 ,()\\-/&]{10,100})([A-Za-z0-9 ,()\\-/&]?)';
 export async function corpusTopics({ limit = config.retrieval.suggestionCount } = {}) {
-  // Over-fetch so deduplication and filtering still leave `limit` usable titles.
   const { rows } = await query(
-    `select distinct on (m[1]) m[1] as code, m[2] as year, m[3] as raw_title,
-            m[4] <> '' as truncated,
-            min(c.chunk_index) as first_seen
-       from bis_chunks c,
-            lateral regexp_matches(c.content, $1, 'g') as m
-      group by m[1], m[2], m[3], m[4]
-      order by m[1], min(c.chunk_index)`,
-    [IS_TITLE_PATTERN]
+    `select distinct on (c.doc_id, c.clause) c.doc_id, c.doc_title, c.clause,
+            min(c.chunk_index) as first_seen,
+            min(c.page_from) as page
+       from bis_chunks c
+      where c.clause is not null and btrim(c.clause) <> ''
+      group by c.doc_id, c.doc_title, c.clause
+      order by c.doc_id, c.clause`
   );
 
-  const seen = new Set();
-  const topics = [];
+  const perDoc = new Map();
   for (const r of rows) {
-    const title = tidyTitle(r.raw_title, r.truncated);
-    if (!title) continue;
-    const key = `${r.code}:${r.year}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    topics.push({ code: r.code, year: r.year, title, isCode: `IS ${r.code}:${r.year}` });
-    if (topics.length >= limit * 3) break;
+    const clause = tidyClause(r.clause);
+    if (!clause) continue;
+    if (!perDoc.has(r.doc_id)) {
+      perDoc.set(r.doc_id, { docTitle: r.doc_title, label: shortDocLabel(r.doc_title), clauses: [] });
+    }
+    perDoc.get(r.doc_id).clauses.push({ clause, title: clause, docId: r.doc_id, page: r.page });
   }
-  return topics.slice(0, limit);
+
+  for (const d of perDoc.values()) d.clauses.sort((a, b) => clauseOrder(a.clause, b.clause));
+
+  // Round-robin so a small document is not crowded out by a 3,445-chunk one, and
+  // so a topic list is never all one document. Deterministic: documents in
+  // doc_id order, clauses in numeric-then-lexical order, so the same corpus
+  // always yields the same chips.
+  const docs = [...perDoc.values()].sort((a, b) => (a.docTitle < b.docTitle ? -1 : 1));
+  const ordered = [];
+  for (let i = 0; ordered.length < limit && i < 64; i++) {
+    for (const d of docs) {
+      const t = d.clauses[i];
+      if (t) ordered.push({ ...t, docTitle: d.label });
+      if (ordered.length >= limit) break;
+    }
+  }
+  return ordered.slice(0, limit);
+}
+
+// A bare year is not a clause. The chunker reads the "2018" in "these
+// guidelines, 2018" as a section number, and there are 7 such values in the
+// current corpus, which in a 6-chip list would be plainly visible.
+const CLAUSE_REJECT = /^(19|20)\d{2}$/;
+const CLAUSE_MAX = 24;
+
+// Numeric clauses get a sanity check, because the chunker also produces noise
+// that a year filter does not catch: `0.15` and `0.0025` in SP 21, and 4-digit
+// values like `1008` and `1015` in BIS CA, which are IS standard numbers read
+// as section numbers. A real section number is short, and its first part is not
+// zero.
+const CLAUSE_NUMERIC_OK = /^[1-9]\d{0,2}(?:\.\d{1,3}){0,2}$/;
+
+function tidyClause(raw) {
+  const c = String(raw ?? '').replace(/\s+/g, ' ').trim();
+  if (!c || c.length > CLAUSE_MAX) return null;
+  if (CLAUSE_REJECT.test(c)) return null;
+  if (/^[0-9.]+$/.test(c) && !CLAUSE_NUMERIC_OK.test(c)) return null;
+  return c;
+}
+
+// 1, 2, 3 … 10, 11 rather than the string order the query returns, which puts
+// 10 before 2. Non-numeric clauses ("Appendix A", "Annex A" — there are five
+// chunks with them, all real) sort after the numbered ones.
+function clauseOrder(a, b) {
+  const na = /^[0-9]/.test(a);
+  const nb = /^[0-9]/.test(b);
+  if (na !== nb) return na ? -1 : 1;
+  if (!na) return a < b ? -1 : a > b ? 1 : 0;
+  const pa = a.split('.');
+  const pb = b.split('.');
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = Number.parseInt(pa[i] ?? '0', 10);
+    const y = Number.parseInt(pb[i] ?? '0', 10);
+    if (x !== y) return x - y;
+  }
+  return pa.length - pb.length;
+}
+
+// Chips are narrow, and SP 21's title is 61 characters. Take the part before an
+// em dash where there is one ("SP 21 — Summaries of Indian Standards..." becomes
+// "SP 21"), drop a leading article, then prefer a comma boundary over a word
+// boundary: "the Bureau of Indian Standards ACT, 2016 NO. 11 of 2016" becomes
+// "Bureau of Indian Standards ACT", not "the Bureau of Indian…".
+function shortDocLabel(title) {
+  let base = String(title ?? '').split(/\s+[—–]\s+/)[0].trim();
+  base = base.replace(/^(the|a|an)\s+/i, '').trim() || base;
+  if (base.length <= 34) return base;
+  const head = base.slice(0, 34);
+  const comma = head.lastIndexOf(',');
+  if (comma > 12) return head.slice(0, comma).trim();
+  const sp = head.lastIndexOf(' ');
+  return (sp > 12 ? head.slice(0, sp) : head) + '…';
 }
 export async function getCorpusStats() {
   const { rows: [totals] } = await query(

@@ -1344,12 +1344,12 @@ async function loadTopics() {
         const res = await fetch(API_BASE + '/api/topics');
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
-        list.innerHTML = data.topics
-            .map((x) =>
-                '<li><button class="side-btn" data-ask="' +
-                esc('What is ' + x.isCode + ' ' + x.title + '?') +
-                '">' + esc(x.title) + ' <span class="code">' + esc(x.isCode) + '</span></button></li>')
-            .join('');
+          list.innerHTML = data.topics
+              .map((x) =>
+                  '<li><button class="side-btn" data-ask="' +
+                  esc('What does clause ' + x.title + ' of ' + x.docTitle + ' say?') +
+                  '">clause ' + esc(x.title) + ' <span class="code">' + esc(x.docTitle) + '</span></button></li>')
+              .join('');
         note.textContent = t('topicsNote');
     } catch (err) {
         list.innerHTML = '';
