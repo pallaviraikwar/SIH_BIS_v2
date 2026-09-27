@@ -59,6 +59,7 @@ function boot() {
   };
   const requests = [];
   const pending = [];
+  const bySelector = new Map();
   const doc = {
     getElementById: (id) => {
       // The i18n tables are read as textContent, the rest as elements. There is no
@@ -69,6 +70,17 @@ function boot() {
       return containers[id] || inputs[id] || makeEl();
     },
     querySelectorAll: () => [],
+    // The citation viewer marks everything outside its own overlay inert while it
+    // is open, and those three elements are addressed by selector rather than by
+    // id, so the page script looks them up at load. Each selector resolves to one
+    // stable element as it would in a browser; anything else resolves to null, so
+    // the script's own .filter(Boolean) is exercised the way it is in a browser
+    // rather than being handed a truthy stub for every selector.
+    querySelector: (sel) => {
+      if (!['header', '.wrap', '.composer'].includes(sel)) return null;
+      if (!bySelector.has(sel)) bySelector.set(sel, makeEl());
+      return bySelector.get(sel);
+    },
     addEventListener() {},
     createElement: makeEl,
     documentElement: {},

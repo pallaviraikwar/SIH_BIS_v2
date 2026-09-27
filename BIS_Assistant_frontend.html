@@ -9,9 +9,18 @@
        no avatars, no animation. The things that were removed are listed at the
        bottom of this block with the reason for each. */
     :root {
+        /* Tells the browser to render native widgets -- scrollbars, form controls,
+           the PDF viewer's own chrome -- for whichever scheme is in force, instead
+           of a white scrollbar down the side of a dark page. */
+        color-scheme: light dark;
         --ink: #1a1a1a;
         --ink-soft: #555;
-        --ink-faint: #777;
+        /* 6b6b6b, not 777: on white #777 measures 4.48:1, just under the 4.5:1 AA
+           floor, and this token carries the smallest text on the page (the 11px
+           sidebar labels, the language tag, the citation toggle, page numbers).
+           The least legible text was also the most numerous. #6b6b6b is 5.33:1
+           and looks the same weight. */
+        --ink-faint: #6b6b6b;
         --rule: #d8d8d8;
         --rule-soft: #ececec;
         --page: #ffffff;
@@ -19,6 +28,38 @@
         --link: #12507d;
         --warn: #8a5300;
         --warn-bg: #fdf6e8;
+        --mark-bg: #fef3c7;
+        --mark-ink: #555;
+        --mark-edge: #fcd34d55;
+    }
+
+    /* Every colour in this file is a token, and this block is the only thing that
+       has to change to support a second scheme. The pairings are computed, not
+       eyeballed, and ui-ux.test.js asserts all of them in both schemes.
+
+       Deliberately not pure black on pure white: #15171b is easier on a long
+       document than #000, and #e8e9e7 is easier than #fff. The blues and ambers
+       are lightened for a dark ground because the light-scheme values sit at
+       roughly 8:1 against white and would fall to about 2:1 here.
+
+       --rule and --rule-soft are hairlines and stay low-contrast on purpose; a
+       divider does not need to be readable, only present. */
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --page: #15171b;
+            --panel: #1d2024;
+            --ink: #e8e9e7;
+            --ink-soft: #b9bdc1;
+            --ink-faint: #9aa0a6;
+            --rule: #33383d;
+            --rule-soft: #262a2e;
+            --link: #7cb8e8;
+            --warn: #e0a64a;
+            --warn-bg: #2a2317;
+            --mark-bg: #4a3c14;
+            --mark-ink: #f2e3bd;
+            --mark-edge: #f2e3bd33;
+        }
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -48,13 +89,13 @@
        to choose, because the language follows the question. */
     .anylang {
         font-size: 12px; color: var(--ink-faint); text-align: right;
-        margin-top: 2px; padding: 2px 8px; border: 1px solid var(--line, #e2e8f0);
+        margin-top: 2px; padding: 2px 8px; border: 1px solid var(--rule);
         border-radius: 4px; white-space: nowrap;
     }
     select {
         font: inherit; font-size: 13px; padding: 5px 8px;
         border: 1px solid var(--rule); border-radius: 3px;
-        background: #fff; color: var(--ink); cursor: pointer;
+        background: var(--page); color: var(--ink); cursor: pointer;
     }
     select:focus-visible, button:focus-visible, input:focus-visible, a:focus-visible {
         outline: 2px solid var(--link); outline-offset: 1px;
@@ -88,7 +129,7 @@
     .side-btn .code { color: var(--ink-faint); }
     .side-input {
         width: 100%; font: inherit; font-size: 13px; padding: 6px 8px;
-        border: 1px solid var(--rule); border-radius: 3px; background: #fff;
+        border: 1px solid var(--rule); border-radius: 3px; background: var(--page);
     }
     .plain-btn {
         font: inherit; font-size: 13px; background: none; cursor: pointer;
@@ -96,25 +137,44 @@
     }
     .plain-btn:hover { border-color: var(--ink-faint); color: var(--ink); }
     .side-note { font-size: 12px; color: var(--ink-faint); }
+    /* A result card is a <button>, so it carries the button resets the same way
+       .side-btn does: a button does not inherit font, centres its text, and sizes
+       to its content, none of which is wanted here. This is the difference between
+       a passage you can find with the keyboard and one you can only reach with a
+       mouse -- and the search results are the main way to find a passage. */
     .dir-card {
+        display: block; width: 100%; text-align: left; font: inherit;
         border: 1px solid var(--rule-soft); border-radius: 3px;
-        padding: 8px 9px; margin-bottom: 6px; cursor: pointer; background: #fff;
+        padding: 8px 9px; margin-bottom: 6px; cursor: pointer; background: var(--page);
     }
     .dir-card:hover { border-color: var(--ink-faint); }
-    .dir-card .t { font-size: 13px; font-weight: 600; }
-    .dir-card .m { font-size: 11px; color: var(--ink-faint); margin: 1px 0 3px; }
-    .dir-card .p { font-size: 12px; color: var(--ink-soft); }
+    /* A button's content model is phrasing content, so these are spans made block
+       by this rule rather than the divs they replaced. */
+    .dir-card .t { display: block; font-size: 13px; font-weight: 600; }
+    .dir-card .m { display: block; font-size: 11px; color: var(--ink-faint); margin: 1px 0 3px; }
+    .dir-card .p { display: block; font-size: 12px; color: var(--ink-soft); }
 
     /* ---- transcript ---- */
-    .turn { padding: 16px 0; border-bottom: 1px solid var(--rule-soft); }
+    /* 68ch on the turn, not on the answer. Uncapped, the transcript ran the full
+       width of the window -- roughly 1600px of line on a wide monitor, well past
+       the 60-80ch that is comfortable to read. Capping the turn rather than just
+       the prose means the question, the answer and the timing line share one
+       left-aligned measure instead of the question spanning the window while the
+       answer sat in a narrow column. It also caps the rule between turns, which is
+       the honest version: a full-width divider above 68ch of text reads as though
+       the page were wider than the content. */
+    .turn { padding: 16px 0; border-bottom: 1px solid var(--rule-soft); max-width: 68ch; }
     .turn:last-child { border-bottom: none; }
     .q { font-weight: 600; font-size: 15px; }
+    /* break-word rather than anywhere for prose: anywhere can break inside an
+       ordinary word, and an answer contains IS numbers, clause references and the
+       occasional long token that should wrap but not shatter. */
+    .a { margin-top: 8px; overflow-wrap: break-word; }
     .tag {
         display: inline-block; font-size: 11px; font-weight: 400;
         color: var(--ink-faint); border: 1px solid var(--rule);
         border-radius: 3px; padding: 0 5px; margin-left: 8px; vertical-align: 2px;
     }
-    .a { margin-top: 8px; }
     .a p { margin: 0 0 9px; }
     .a ul, .a ol { margin: 0 0 9px; padding-left: 20px; }
     .a li { margin: 2px 0; }
@@ -123,8 +183,12 @@
         color: var(--ink-faint); margin: 12px 0 5px;
     }
     .a .cite { font-size: 11px; color: var(--link); }
+    /* `anywhere` here, matching the drawer, because these are the long document
+       titles ("SP 21 - Summaries of Indian Standards for Building Materials and
+       Construction") rather than prose. Unbroken, they forced the whole
+       transcript to scroll sideways on a narrow screen. */
     .src {
-        font-size: 12px; color: var(--ink-soft);
+        font-size: 12px; color: var(--ink-soft); overflow-wrap: anywhere;
         border-top: 1px solid var(--rule-soft); margin-top: 12px; padding-top: 8px;
     }
     .src ol { padding-left: 18px; }
@@ -170,10 +234,14 @@
         overflow-y: auto; border-radius: 0 3px 3px 0;
     }
     /* The cited clause. Warm rather than the link blue, so a highlight in the
-       passage is never mistaken for a control. */
+       passage is never mistaken for a control.
+       --mark-ink is pinned rather than inherited: the fill is light in the
+       light scheme, so `color: inherit` would put light text on a light fill the
+       moment the page inverts. Both schemes are verified in ui-ux.test.js
+       (6.70:1 light, 8.47:1 dark). */
     .cite-excerpt mark {
-        background: #fef3c7; color: inherit; padding: 0 2px; border-radius: 2px;
-        font-weight: 600; box-shadow: 0 0 0 1px #fcd34d55;
+        background: var(--mark-bg); color: var(--mark-ink); padding: 0 2px; border-radius: 2px;
+        font-weight: 600; box-shadow: 0 0 0 1px var(--mark-edge);
     }
 
     /* ---- in-page source viewer ----
@@ -187,7 +255,7 @@
     .cite-viewer.open { visibility: visible; transition: visibility 0s; }
 
     .cite-viewer-scrim {
-        position: absolute; inset: 0; background: #1a1a1a59;
+        position: absolute; inset: 0; background: color-mix(in srgb, var(--ink) 35%, transparent);
         opacity: 0; transition: opacity .18s ease;
     }
     .cite-viewer.open .cite-viewer-scrim { opacity: 1; }
@@ -197,7 +265,7 @@
         width: min(520px, 100vw);
         display: flex; flex-direction: column;
         background: var(--page); border-left: 1px solid var(--rule);
-        box-shadow: -8px 0 24px #00000014;
+        box-shadow: -8px 0 24px color-mix(in srgb, var(--ink) 10%, transparent);
         transform: translateX(100%); transition: transform .18s ease;
     }
     .cite-viewer.open .cite-viewer-panel { transform: translateX(0); }
@@ -230,8 +298,8 @@
         color: var(--ink-soft); white-space: pre-wrap;
     }
     .cite-viewer-excerpt mark {
-        background: #fef3c7; color: inherit; padding: 0 2px; border-radius: 2px;
-        font-weight: 600; box-shadow: 0 0 0 1px #fcd34d55;
+        background: var(--mark-bg); color: var(--mark-ink); padding: 0 2px; border-radius: 2px;
+        font-weight: 600; box-shadow: 0 0 0 1px var(--mark-edge);
     }
     .cite-viewer-frame { flex: 1; width: 100%; border: 0; background: var(--panel); }
 
@@ -254,7 +322,7 @@
     }
 
     .notice {
-        border: 1px solid #e3d3ae; background: var(--warn-bg); color: var(--warn);
+        border: 1px solid color-mix(in srgb, var(--warn) 32%, var(--page)); background: var(--warn-bg); color: var(--warn);
         padding: 9px 11px; border-radius: 3px; font-size: 13px; margin-bottom: 9px;
     }
     .thinking { color: var(--ink-faint); font-size: 14px; }
@@ -262,22 +330,20 @@
     /* ---- composer ---- */
     .composer {
         position: fixed; left: 268px; right: 0; bottom: 0;
-        border-top: 1px solid var(--rule); background: #fff; padding: 12px 24px;
+        border-top: 1px solid var(--rule); background: var(--page); padding: 12px 24px;
     }
     .composer .inner { display: flex; gap: 8px; }
     .composer input {
         flex: 1; font: inherit; padding: 8px 10px;
-        border: 1px solid var(--rule); border-radius: 3px; background: #fff;
+        border: 1px solid var(--rule); border-radius: 3px; background: var(--page);
     }
     .composer button {
         font: inherit; font-size: 14px; padding: 8px 18px; cursor: pointer;
-        background: var(--ink); color: #fff; border: 1px solid var(--ink); border-radius: 3px;
+        background: var(--ink); color: var(--page); border: 1px solid var(--ink); border-radius: 3px;
     }
-    .composer button:disabled { background: #999; border-color: #999; cursor: default; }
+    .composer button:disabled { opacity: .55; cursor: default; }
 
     .intro { color: var(--ink-soft); }
-    .intro ul { padding-left: 20px; margin: 6px 0 0; }
-    .intro li { margin: 3px 0; }
 
     @media (max-width: 860px) {
         aside { display: none; }
@@ -296,9 +362,20 @@
        - the camera and mic buttons. Their handlers, handleImageUpload and
          startDictation, were never defined anywhere in the file, so both threw a
          ReferenceError on click. There is no OCR or speech path behind them: a
-         camera would need a vision model this machine cannot fit alongside the
-         generator, and the browser speech API used by the mic would stream audio
-         to a cloud service, which contradicts running fully locally. */
+          camera would need a vision model this machine cannot fit alongside the
+          generator, and the browser speech API used by the mic would stream audio
+          to a cloud service, which contradicts running fully locally.
+       - `chatBox.scrollTop = chatBox.scrollHeight`, in three places. The transcript
+          has no height of its own, so the document scrolls and main cannot be
+          scrolled programmatically: every one of those assignments was a no-op. A
+          turn reached the viewport only because it also called scrollIntoView, and
+          notice() did not, which is why an error could render below the fold.
+       - `.intro ul` and `.intro li`, which styled a bulleted list in the empty
+          state. emptyState is a single sentence and has never contained a list, so
+          nothing could select those two rules.
+       - the send button's `disabled` state during a generation. It was a dead end
+          -- a local model can take tens of seconds and there was no way to stop it.
+          The button is Stop now, and `inflight` is what guards a second Enter. */
 </style>
 </head>
 <body>
@@ -380,7 +457,7 @@
                data-i18n-placeholder="askPlaceholder"
                placeholder="Ask about a standard, a clause, or an IS number"
                onkeydown="if(event.key==='Enter') send()">
-        <button id="sendBtn" onclick="send()" data-i18n="askButton">Ask</button>
+        <button id="sendBtn" onclick="onSendClick()" data-i18n="askButton">Ask</button>
     </div>
 </div>
 
@@ -402,6 +479,7 @@
   "pageNote": "The page number is the PDF page, not the printed folio.",
   "askPlaceholder": "Ask about a standard, a clause, or an IS number",
   "askButton": "Ask",
+  "stopButton": "Stop",
   "emptyState": "Ask a question about the indexed BIS documents. Answers come only from those documents, with the clause and page shown.",
   "thinking": "Searching the index and drafting an answer…",
   "tagAnswer": "answered",
@@ -434,6 +512,7 @@
   "pageNote": "पृष्ठ संख्या PDF पृष्ठ है, मुद्रित पृष्ठ संख्या नहीं।",
   "askPlaceholder": "किसी मानक, खंड या IS नंबर के बारे में पूछें",
   "askButton": "पूछें",
+  "stopButton": "रोकें",
   "emptyState": "अनुक्रमित BIS दस्तावेज़ों के बारे में प्रश्न पूछें। उत्तर केवल उन्हीं दस्तावेज़ों से आते हैं, खंड और पृष्ठ सहित।",
   "thinking": "सूची में खोजकर उत्तर तैयार किया जा रहा है…",
   "tagAnswer": "उत्तर दिया",
@@ -466,6 +545,7 @@
   "pageNote": "ਪੰਨਾ ਨੰਬਰ PDF ਪੰਨਾ ਹੈ, ਛਪੀ ਪੰਨਾ ਨੰਬਰ ਨਹੀਂ।",
   "askPlaceholder": "ਕਿਸੇ ਮਿਆਰ, ਖੰਡ ਜਾਂ IS ਨੰਬਰ ਬਾਰੇ ਪੁੱਛੋ",
   "askButton": "ਪੁੱਛੋ",
+  "stopButton": "ਰੋਕੋ",
   "emptyState": "ਇੰਡੈਕਸ ਕੀਤੇ BIS ਦਸਤਾਵੇਜ਼ਾਂ ਬਾਰੇ ਪੁੱਛੋ। ਜਵਾਬ ਸਿਰਫ਼ ਉਨ੍ਹਾਂ ਹੀ ਦਸਤਾਵੇਜ਼ਾਂ ਤੋਂ ਆਉਂਦੇ ਹਨ, ਖੰਡ ਅਤੇ ਪੰਨੇ ਸਹਿਤ।",
   "thinking": "ਸੂਚੀ ਵਿੱਚ ਖੋਜ ਕੇ ਜਵਾਬ ਤਿਆਰ ਕੀਤਾ ਜਾ ਰਿਹਾ ਹੈ…",
   "tagAnswer": "ਜਵਾਬ ਦਿੱਤਾ",
@@ -498,6 +578,7 @@
   "pageNote": "పేజీ సంఖ్య PDF పేజీ, ముద్రించిన పేజీ సంఖ్య కాదు.",
   "askPlaceholder": "ప్రమాణం, ఖండం లేదా IS సంఖ్య గురించి అడగండి",
   "askButton": "అడగండి",
+  "stopButton": "ఆపండి",
   "emptyState": "ఇండెక్స్ చేసిన BIS పత్రాల గురించి అడగండి. సమాధానాలు ఆ పత్రాల నుండే వస్తాయి, ఖండం, పేజీతో సహా.",
   "thinking": "జాబితాలో వెతుకుతూ సమాధానం రూపొందిస్తోంది…",
   "tagAnswer": "సమాధానం ఇవ్వబడింది",
@@ -570,6 +651,18 @@ const citeNewTab = document.getElementById('citeViewerNewTab');
 // The link that opened the viewer, so focus can go back where it came from.
 let citeReturnFocus = null;
 
+// Everything the modal covers. The panel declares aria-modal="true", which is a
+// promise that focus and assistive technology stay inside it -- but nothing was
+// keeping that promise, so Tab walked straight out of the dialog and into the
+// transcript behind the scrim. Marking the rest of the document inert while the
+// drawer is open is the way to actually keep it, and it is cheaper and more
+// robust than a hand-rolled keydown trap: native, so it also stops a screen
+// reader reading the background, and it reuses the mechanism already used on the
+// panel itself.
+const citeBackground = ['header', '.wrap', '.composer']
+    .map((sel) => document.querySelector(sel))
+    .filter(Boolean);
+
 // The clause is re-marked here rather than shipped as markup, because the server
 // already renders a marked copy into the <details> panel and a second rendered
 // copy in an attribute would be a third thing to keep in sync.
@@ -607,6 +700,10 @@ function openCite(link) {
         // inert while off screen would hide it from the tab order, but the panel is
         // visible during the transition, so it is removed once open and set on close.
         citeViewer.removeAttribute('inert');
+        // Background first, then focus. The link that opened this lives inside
+        // .wrap, so the browser blurs it as it goes inert; moving focus on the
+        // same tick leaves no frame in which focus is nowhere.
+        citeBackground.forEach((el) => el.setAttribute('inert', ''));
         citeViewer.querySelector('.cite-viewer-x').focus();
     }
 }
@@ -618,6 +715,10 @@ function closeCite() {
     citeViewer.setAttribute('inert', '');
     // Cleared so a 7.5 MB PDF is released instead of being held for the session.
     citeFrame.removeAttribute('src');
+    // Lifted before the focus restore, not after: the element we are about to
+    // return focus to is a citation link inside .wrap, and focusing a descendant
+    // of an inert subtree silently does nothing.
+    citeBackground.forEach((el) => el.removeAttribute('inert'));
     if (citeReturnFocus) {
         citeReturnFocus.focus();
         citeReturnFocus = null;
@@ -650,7 +751,30 @@ function emptyState() {
     chatBox.innerHTML = '<div class="turn"><div class="intro">' + esc(t('emptyState')) + '</div></div>';
 }
 
+/* The transcript has no height constraint of its own, so the *document* scrolls
+   and `main` cannot be scrolled programmatically. Two consequences, both of which
+   used to be bugs: assigning chatBox.scrollTop did nothing, and an appended turn
+   only reached the viewport because turn() called scrollIntoView. */
+const NEAR_BOTTOM_PX = 80;
+
+function readerAtBottom() {
+    // Measured against the document, not chatBox, for the reason above.
+    if (typeof document === 'undefined' || typeof window === 'undefined') return true;
+    const gap = document.documentElement.scrollHeight - (window.scrollY + window.innerHeight);
+    return gap <= NEAR_BOTTOM_PX;
+}
+
+function scrollToEnd() {
+    // Instant, not smooth. This file removes motion rather than adding it, and a
+    // jump that follows your eye is less disorienting than an eased one that
+    // arrives after you have started reading.
+    chatBox.scrollIntoView({ block: 'end' });
+}
+
 function turn(queryHtml, answerHtml, tagKey, meta) {
+    // Sampled before the append, because appending changes the document height
+    // and would therefore make the measurement meaningless.
+    const stick = readerAtBottom();
     const div = document.createElement('div');
     div.className = 'turn';
     const tag = tagKey ? '<span class="tag">' + esc(t(tagKey)) + '</span>' : '';
@@ -666,8 +790,10 @@ function turn(queryHtml, answerHtml, tagKey, meta) {
         '<div class="a">' + answerHtml + '</div>' +
         metaLine;
     chatBox.appendChild(div);
-    chatBox.scrollIntoView({ block: 'end' });
-    chatBox.scrollTop = chatBox.scrollHeight;
+    // Only if the reader was already at the bottom. The workflow this UI exists
+    // for is scroll up, open a citation, check the clause against the passage --
+    // so an answer arriving must never drag the viewport off what is being read.
+    if (stick) scrollToEnd();
     return div;
 }
 
@@ -676,16 +802,47 @@ function notice(html) {
     d.className = 'notice';
     d.innerHTML = html;
     chatBox.appendChild(d);
-    chatBox.scrollTop = chatBox.scrollHeight;
+    // Unconditionally, unlike a turn. This is a failure, and a failure that
+    // renders quietly below the fold is worse than no notice at all: it looks
+    // like the question simply went unanswered.
+    scrollToEnd();
     return d;
+}
+
+/* The request currently in flight, so that it can be cancelled. The send button
+   used to be disabled for the whole of a generation with no way out, which on a
+   local model that takes tens of seconds is a dead end with a spinner. */
+let inflight = null;
+
+/* The button is two buttons depending on the state, so its label is set from the
+   i18n table rather than baked into the markup. It is also re-set in the finally
+   block below, because applyLanguage() rewrites every data-i18n element when the
+   server answers in another language, and the label has to agree with whatever
+   language the interface ended up in. */
+function setSendLabel(key) {
+    sendBtn.textContent = t(key);
+}
+
+function stopAsk() {
+    if (inflight) inflight.abort();
+}
+
+function onSendClick() {
+    if (inflight) stopAsk();
+    else send();
 }
 
 async function send() {
     const text = input.value.trim();
     if (!text) return;
+    // Enter during a generation must not start a second request. Cancelling is the
+    // button's job, which is why the button is not disabled any more.
+    if (inflight) return;
 
     input.value = '';
-    sendBtn.disabled = true;
+    setSendLabel('stopButton');
+    const controller = new AbortController();
+    inflight = controller;
     if (!chatBox.querySelector('.turn')) emptyState();
     const pending = turn(esc(text), '<div class="thinking">' + esc(t('thinking')) + '</div>', null, null);
 
@@ -699,6 +856,7 @@ async function send() {
             // made a Hindi question sent against the default `lang: 'en'` skip
             // translation altogether.
             body: JSON.stringify({ query: text, lang: 'auto' }),
+            signal: controller.signal,
         });
         const data = await res.json();
 
@@ -733,9 +891,17 @@ async function send() {
         turn(esc(text), data.answer, tag, meta);
     } catch (err) {
         pending.remove();
-        notice(esc(t('connError')));
+        if (err && err.name === 'AbortError') {
+            // The reader asked for this, so nothing is reported as wrong. The typed
+            // question goes back in the composer rather than being dropped: they
+            // cancelled the wait, not the question.
+            input.value = text;
+        } else {
+            notice(esc(t('connError')));
+        }
     } finally {
-        sendBtn.disabled = false;
+        inflight = null;
+        setSendLabel('askButton');
         input.focus();
     }
 }
@@ -746,6 +912,9 @@ function ask(text) {
 }
 
 function clearChat() {
+    // Cancelled first, or the in-flight answer arrives into a transcript that has
+    // just been emptied and appends itself to the empty state.
+    stopAsk();
     emptyState();
     input.focus();
 }
@@ -787,6 +956,27 @@ function dirNote(text) {
         '<div class="side-note">' + esc(text) + '</div>';
 }
 
+/* The card used to be a div with a click handler, which made the passage search
+   reachable by mouse only -- and that search is the main way to find a passage.
+   It is a button now, so it is focusable, reachable with Enter and Space, and
+   announced as a control. The delegated handler matches on .dir-card, so the
+   click path itself needed no change.
+
+   The trailing ellipsis used to be appended unconditionally, so a 40-character
+   preview ended in a "…" that claimed a truncation that had not happened, and the
+   fixed 150-character slice could land inside a word -- or, in the Devanagari and
+   Telugu this app is actually used in, inside a grapheme cluster, leaving a broken
+   glyph. Both are handled by cutting back to the last space. */
+function trimPreview(text, max) {
+    const s = String(text == null ? '' : text);
+    if (s.length <= max) return s;
+    const cut = s.slice(0, max);
+    const space = cut.lastIndexOf(' ');
+    // The floor stops a long unbreakable token (a URL, a chemical string) from
+    // collapsing the card to a single word.
+    return (space > max * 0.6 ? cut.slice(0, space) : cut).replace(/\s+$/, '') + '…';
+}
+
 async function runSearch() {
     const q = document.getElementById('stdSearch').value.trim();
     const seq = ++searchSeq;
@@ -813,10 +1003,10 @@ async function runSearch() {
                 const ask =
                     r.clause ? 'Tell me about ' + r.docTitle + ', clause ' + r.clause
                              : 'Tell me about ' + r.docTitle;
-                return '<div class="dir-card" data-ask="' + esc(ask) + '">' +
-                    '<div class="t">' + esc(r.docTitle) + '</div>' +
-                    '<div class="m">' + esc('cl. ' + (r.clause || '—') + ' · p. ' + pages) + '</div>' +
-                    '<div class="p">' + esc(r.preview.slice(0, 150)) + '…</div></div>';
+                return '<button type="button" class="dir-card" data-ask="' + esc(ask) + '">' +
+                    '<span class="t">' + esc(r.docTitle) + '</span>' +
+                    '<span class="m">' + esc('cl. ' + (r.clause || '—') + ' · p. ' + pages) + '</span>' +
+                    '<span class="p">' + esc(trimPreview(r.preview, 150)) + '</span></button>';
             })
             .join('');
     } catch (err) {
