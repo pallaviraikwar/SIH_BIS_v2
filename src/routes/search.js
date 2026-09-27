@@ -7,9 +7,13 @@ export const searchRouter = express.Router();
 /**
  * Retrieval without generation.
  *
- * Exists so the vector search can be demonstrated and debugged on its own —
- * it shows the cosine score for every candidate, which is how the threshold in
- * .env gets tuned. The chatbot frontend does not use this.
+ * Shows the cosine score for every candidate, which is how the threshold in
+ * .env gets tuned, and reports the band the answer path would have chosen.
+ *
+ * The frontend does use this: the sidebar's "Search passages" box calls it, so
+ * a defect here is a dead search box rather than a broken debug tool. That
+ * comment used to say the opposite, which is part of why `searchOnly` went
+ * untested and a typo in it shipped — see test/search.test.js.
  */
 searchRouter.get('/search', async (req, res) => {
   const q = String(req.query.q ?? '').trim();

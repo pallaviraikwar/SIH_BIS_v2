@@ -653,7 +653,7 @@ export async function searchOnly(query, { topK, threshold, lang } = {}) {
     passages: filtered,
     allPassages: passages,
     topSimilarity: Number((passages[0]?.similarity ?? 0).toFixed(4)),
-    band: bandFor(passes[0]?.similarity ?? 0),
+    band: bandFor(passages[0]?.similarity ?? 0),
   };
 }
 
