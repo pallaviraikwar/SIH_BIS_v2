@@ -39,15 +39,19 @@ docker ps              # must now work without sudo
 
 ## Install and run
 
-You need a corpus one way or the other. Either
+This repository ships a corpus, so a clone can answer questions and open
+citations immediately:
 
-- put your BIS PDFs in **`data/pdfs/`**, or
-- drop a **prepared index** into `index-snapshots/` — see
-  [Sharing a prepared index](#sharing-a-prepared-index). This takes seconds
-  instead of minutes, and needs no PDFs at all.
+- **`data/pdfs/`** — five BIS documents, 17 MB
+- **`index-snapshots/`** — the matching prepared index, 19 MB
 
-The PDFs are gitignored, because the standards are not ours to redistribute, so a
-fresh clone has an empty `data/pdfs/`.
+That is deliberate. It means the demo is `./run.sh` and nothing else, with no
+corpus to assemble first. See [The corpus](#the-corpus) for what is in it and
+[Sharing a prepared index](#sharing-a-prepared-index) to export your own from a
+different set of documents.
+
+If you would rather start from your own standards, replace `data/pdfs/` and run
+`./run.sh --no-snapshot` to ingest them from scratch.
 
 ### One command
 
@@ -194,11 +198,12 @@ empty, so usually you need to do nothing at all.
 `index-snapshots/LATEST` names which bundle to use. It is a plain text file, not a
 symlink, because symlinks do not survive being zipped and copied around.
 
-**The bundle contains no PDFs**, and that is deliberate — the standards are not
-ours to redistribute, and the PDFs are 16 MB on top of the 19 MB of vectors. So on
-a machine that does not already have the corpus, answers are fully grounded but
-clicking a citation will not open anything. The import tells you which documents
-are affected. Drop the PDFs into `data/pdfs/` and the links resolve.
+**The bundle contains no PDFs**, and that is deliberate — it would be 17 MB on top
+of the 19 MB of vectors, and a bundle meant to be handed around should not drag the
+source documents with it. So on a machine that has not got the corpus, answers are
+still fully grounded but clicking a citation will not open anything. The import
+tells you which documents are affected. Drop the PDFs into `data/pdfs/` and the
+links resolve. This repository ships both, so a clone gets working links.
 
 Three things about a bundle are worth knowing:
 
@@ -213,9 +218,40 @@ Three things about a bundle are worth knowing:
 - **It is idempotent.** Loading the same bundle twice changes nothing. To replace
   an index built by a different model, `npm run index:import -- --replace`.
 
-The whole folder is gitignored. It is a derived artefact that anyone can rebuild
-from a corpus they already have, and a 19 MB binary blob of extracted standards
-text does not belong in a public repository.
+This repository tracks exactly one bundle — the one matching its corpus. Further
+exports are gitignored, so re-running `index:export` never quietly stages another
+19 MB. To keep a second one, negate it in `.gitignore` first.
+
+## The corpus
+
+Five BIS documents, committed so that a clone works out of the box.
+
+| Document | Pages | What it covers |
+| --- | --- | --- |
+| SP 21 — Summaries of Indian Standards for Building Materials | 929 | brick, mortar and concrete properties; the richest source in the corpus |
+| BIS CA 12032019 | 412 | Devanagari fee schedule — largely tables, and the source of the garbled-Hindi problem in Troubleshooting |
+| BIS Hallmarking Regulations 2018 (Incorp. Amdt 1) | — | precious-metal hallmarking |
+| The Bureau of Indian Standards Act, 2016 | — | the BIS Act itself |
+| GoL Guidelines 01052019 | — | guidelines of legislation |
+
+The two that are BIS *publications* rather than government gazette documents —
+SP 21 and the CA 12032019 fee schedule — are here for a working demo. If you extend
+this project or publish it further, check the position on redistribution before
+adding a sixth.
+
+Two things follow from the corpus being real rather than synthetic, and both are
+visible in the output:
+
+- **`BIS_CA_12032019` retrieves badly.** Its extracted text has corrupted glyph
+  ordering, so it matches questions it should not. `PDF_EXCLUDE` in `.env` parks
+  it; see Troubleshooting.
+- **Answers sometimes name the wrong property.** SP 21's brick clauses sit close
+  together, so a question about efflorescence can return a passage about
+  compressive strength. This is a retrieval-quality issue, not a plumbing one, and
+  the thresholds in `.env` are the lever.
+
+`./run.sh --smoke` asks one real question end to end so you can see both the
+grounding and this.
 
 ## Verify it works
 
@@ -330,6 +366,20 @@ and resumable, and a document whose page and chunk counts already match is
 skipped. Use `npm run ingest:force` to re-embed everything — required after
 changing the chunker, the embedding model, or the vector width, because stored
 vectors are only comparable within one of those.
+
+## Deployment
+
+This is built to run on your own machine, and that is where it should stay. Two
+things are worth knowing before you put it anywhere else:
+
+- **Ollama must be reachable from the container**, so `scripts/ollama-host-setup.sh`
+  binds it to `0.0.0.0`. Ollama has no authentication, so that exposes your models
+  to everything that can reach port 11434. On an untrusted network, run
+  `--revert` and reach Ollama over a private interface instead.
+- **`/documents/:docId/pdf` serves the source PDFs to anyone who can reach the
+  app.** That is the correct behaviour locally — verifying a citation is the whole
+  point of the feature — but on a public host it republishes the standards. Put it
+  behind authentication, or accept that it is public, deliberately.
 
 ## Configuration
 

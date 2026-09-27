@@ -4,10 +4,11 @@ Prepared vector indexes. A snapshot lets someone install this project with a
 working corpus **without running ingest**, which on CPU takes 5-20 minutes for a
 few thousand chunks.
 
-The whole folder is gitignored except this file. A snapshot is a derived
-artefact — anyone can rebuild one with `npm run index:export` — so committing a
-~19 MB binary blob of text extracted from BIS standards into a public repository
-buys nothing.
+One bundle is tracked — the one matching this repository's corpus — so a clone
+starts from a working index. Further exports are ignored, because a snapshot is a
+derived artefact that anyone can rebuild with `npm run index:export`, and
+re-running that should not quietly stage another ~19 MB. To keep a second one,
+negate it in `.gitignore` first.
 
 ## Using one
 
@@ -64,8 +65,10 @@ manifest applies the same rule one step earlier, before anything is written.
 ## What is not in here: the PDFs
 
 A snapshot records each document's source filename and sha256, and does not
-include the file. The BIS standards are not ours to redistribute, and the PDFs
-are 16 MB on top of the 19 MB of vectors.
+include the file. A bundle meant to be handed to someone else should not arrive
+with 17 MB of source documents attached — and the standards it indexes are not
+freely redistributable in the first place. This repository ships the PDFs
+separately, in `data/pdfs/`, so a clone has both.
 
 The consequence, which the import reports explicitly:
 

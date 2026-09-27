@@ -24,7 +24,7 @@
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
     "docker:ps": "docker compose ps",
-    "docker:logs": "docker compose logs -f app ollama",
+    "docker:logs": "docker compose logs -f app",
     "docker:shell": "docker compose exec app sh",
     "docker:ingest": "docker compose run --rm --no-deps app npm run ingest",
     "docker:ingest:force": "docker compose run --rm --no-deps app npm run ingest:force",

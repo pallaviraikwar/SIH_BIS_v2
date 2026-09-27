@@ -10,10 +10,10 @@
 .env.*
 !.env.example
 
-# The corpus is bind-mounted at runtime and must never be baked in. It is 17 MB
-# of BIS standards today and will be larger as documents are added, none of
-# which are ours to redistribute, and a PDF baked into a layer stays in the
-# image even if the bind mount later shadows it.
+# The corpus is committed to git but MUST still be kept out of the image. It is
+# 17 MB today and grows with the corpus, and a PDF baked into a layer stays in the
+# image history even if the bind mount later shadows it. The mount is one line
+# and makes the PDFs swappable without a rebuild, which is the point.
 data/pdfs/*
 !data/pdfs/.gitkeep
 

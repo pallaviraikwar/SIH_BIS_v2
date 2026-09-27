@@ -330,11 +330,13 @@ export async function writeNdjsonGz(filePath, rows) {
 /**
  * Compare the bundle's PDF digests against what is actually on disk.
  *
- * This is the report that makes a metadata-only bundle honest. The bundle holds
- * no PDFs — they are BIS standards and not ours to redistribute — so on a
- * machine that has not got the corpus, every answer is correctly grounded and
- * every citation link 404s. That is a visible, explainable state rather than a
- * broken one, and it is worth four distinct outcomes:
+ * This is the report that makes a bundle honest about the PDFs it does not carry.
+ * A bundle holds no PDFs — a 19 MB vector bundle that also dragged in 17 MB of
+ * standards would be a poor trade, and the ones it indexes are not ours to
+ * redistribute freely — so on a machine that has not got the corpus, every answer
+ * is correctly grounded and every citation link 404s. That is a visible,
+ * explainable state rather than a broken one, and it is worth four distinct
+ * outcomes:
  *
  *   present     the file is there and its digest matches
  *   unverified  the file is there, but the bundle recorded no digest for it, so

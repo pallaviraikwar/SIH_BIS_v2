@@ -496,10 +496,11 @@ preflight() {
     if snapshot_dir >/dev/null 2>&1; then
       info "no PDFs in data/pdfs, but there is a prepared index to load from."
     else
-      warn "no PDFs in data/pdfs — the corpus is gitignored, so a fresh clone is empty."
-      dim "Put your BIS PDFs in data/pdfs/ to ingest, or drop a prepared index"
-      dim "into index-snapshots/ to load one in seconds. The app will start and"
-      dim "answer everything with 'not found' until you do one of those."
+      warn "no PDFs in data/pdfs, and no prepared index to fall back on."
+      dim "This repository ships the corpus, so an empty data/pdfs/ means the PDFs"
+      dim "were deleted or never checked out. Put them back with:"
+      dim "    git checkout -- data/pdfs"
+      dim "The app will start and answer everything with 'not found' until you do."
     fi
   else
     ok "${#pdfs[@]} PDF(s) in data/pdfs"

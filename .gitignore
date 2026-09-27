@@ -6,18 +6,28 @@
 # Dependencies
 node_modules/
 
-# Source corpus — BIS standard PDFs are not ours to redistribute
-data/pdfs/*
-!data/pdfs/.gitkeep
+# Source corpus — the BIS standard PDFs, and these ARE tracked.
+#
+# This was ignored at first, on the grounds that the standards are not ours to
+# redistribute. That is still true in general, and worth remembering before
+# adding a sixth document: these five are committed deliberately so that a clone
+# has a working corpus and working citation links the moment it starts, which is
+# the whole point of the demo. Treat the folder as read-only reference material.
+# Replace or regenerate in place rather than adding alongside.
+#
+# If you ever do need to strip the corpus from a copy, do it in a fork rather
+# than here — a `git rm` leaves the blobs reachable in history anyway.
 
 # Prepared index snapshots.
 #
-# Gitignored on purpose, and the ~19 MB is only the reason. A snapshot is a
-# derived artefact: anyone can rebuild one with `npm run index:export` from a
-# machine that has the corpus. Committing a binary blob of someone else's
-# standards' text into a public repo buys nothing and ages badly. Hand the
-# directory over as a zip, a release asset or a drive instead.
+# The one bundle this repo ships IS tracked, so a clone starts from a working
+# index instead of 5-20 minutes of CPU embedding. Everything else is ignored:
+# a snapshot is a derived artefact, anyone can rebuild one with
+# `npm run index:export`, and re-running that should never quietly stage another
+# 19 MB. To add a second bundle on purpose, negate it here first.
 index-snapshots/*
+!index-snapshots/20260927T115319Z-ollama-nomic-embed-text-768d/
+!index-snapshots/LATEST
 !index-snapshots/README.md
 
 # Local artifacts

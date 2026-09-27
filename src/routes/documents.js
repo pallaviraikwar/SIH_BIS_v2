@@ -51,11 +51,11 @@ export function resolvePdfPath(docId, sourceFile) {
  * 929-page document without downloading all of it first.
  *
  * Note for deployment: this makes the source document downloadable by anyone who
- * can reach the server. The corpus is excluded from the repository because the
- * BIS standard PDFs are not ours to redistribute, so on a public host this route
- * is effectively a publication of the document. That is the correct behaviour for
- * a local or internal deployment, where being able to verify a citation is the
- * whole point, but it should be a deliberate decision rather than a surprise.
+ * can reach the server. The corpus IS committed to the repository, so on a public
+ * host this route is a publication of the document. That is the correct behaviour
+ * for a local or internal deployment, where being able to verify a citation is
+ * the whole point, but on a public host it should be a deliberate decision rather
+ * than a surprise. See README.md "Deployment" before exposing this.
  */
 documentsRouter.get('/documents/:docId/pdf', async (req, res) => {
   const { docId } = req.params;
