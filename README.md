@@ -121,12 +121,72 @@ curl -s localhost:3000/api/chat \
 | `POST /api/chat` | `{query, lang}` → `{answer, sources, meta}`. `answer` is HTML. |
 | `GET /api/search?q=…&k=…&threshold=…` | retrieval only, no model call. Use to re-tune. |
 | `GET /api/documents` | what is actually in the vector store. Backs the UI's Quick Directory. |
+| `GET /api/documents/:docId/pdf` | serves the source PDF inline, so a citation link can open it. See [Citations](#citations). |
+| `GET /api/documents/citable` | which documents the citation route will serve, with page counts. |
 | `GET /api/health` | DB reachability, corpus size, model config. |
 
 `answer` is HTML because the existing frontend injects it with `innerHTML`.
 Model output, document titles, and clause labels are all escaped server-side
 (`src/render.js`); `[[1]]` markers become citation chips and a Sources block is
 appended.
+
+### Citations
+
+Every citation is verifiable. Clicking one opens a panel over the right-hand
+side of the conversation, so the answer stays on screen next to the page it
+cites. The panel has three parts:
+
+- **The passage**, at the top: the exact chunk that was sent to the model, with
+  the cited clause highlighted. This is the same text, not a re-extraction, so
+  what you read is genuinely what the answer was based on. It stays readable
+  even if the document below fails to load.
+- **The document**, in an embedded PDF viewer, opened at the cited page. The
+  browser's own viewer is used, so there is no PDF.js and no extra dependency.
+- **An "Open in new tab" link**, in case the embedded viewer misbehaves.
+
+The same passage is also available under each citation as a collapsed
+`+ show passage` disclosure, so the evidence is readable in the transcript
+itself and the answer still makes sense with JavaScript disabled.
+
+Close the panel with the × button, by clicking outside it, or with `Escape`. It
+goes full-screen on narrow viewports, where the sidebar is hidden anyway. The
+document is only fetched when you open a citation, and released when you close
+it — the 7.5 MB file is never pulled in on page load.
+
+`page_from` is a **1-based PDF page index**, not the page number printed in the
+document's footer, so the two can disagree. The panel says so too.
+
+`GET /api/documents/:docId/pdf` takes only a `docId`. The filename is read from
+`bis_documents.source_file` in the database, never from the URL, and the
+resolved path must stay inside `config.corpus.pdfDir`. Requests for anything
+that is not an indexed, non-scanned document get a 404. Range requests are
+supported, so viewers can seek inside a 7.5 MB document without downloading it
+whole.
+
+Three things to know about the embedded viewer:
+
+- **It depends on `Content-Disposition: inline`.** The route already sends that
+  because an `<iframe>` will not render a file offered as a download. Changing
+  it to `attachment` — a reasonable-looking hardening — silently breaks the
+  panel, which will then show a download prompt instead of the document.
+- **Seeking with `#page=` inside a frame works in Chrome, Edge and Firefox. It
+  is unverified in Safari**, whose in-frame PDF viewer may open at page 1. The
+  passage and the "Open in new tab" link are there for exactly that case. This
+  is the one thing here that needs a human to check on real hardware.
+- **The panel's JavaScript has no automated test.** There is no headless
+  browser and no devDependencies in this project, so what is covered is the
+  server-rendered markup, the wiring, and the two properties that would
+  otherwise cost a large download or trap keyboard focus. The behaviour itself
+  is verified by hand.
+
+Two things worth knowing before you deploy this publicly:
+
+- The route is **open by design** — no auth, because the corpus is the product.
+  But it also means the full PDF is downloadable by anyone who can reach the
+  server.
+- `data/pdfs` is **not** in version control. The BIS standards are not ours to
+  redistribute, so keep the route bound to localhost or put authentication in
+  front of it if you expose the app.
 
 ### The Quick Directory
 
@@ -234,6 +294,24 @@ in the target language. Translating the answer would round-trip the citations
 and blur numeric limits; generating natively keeps IS codes, clause numbers,
 units, and limits in their original English form.
 
+**The query text decides the language, never a flag.** The frontend sends
+`lang: 'auto'` and the server reads the script off the query. Two rules keep that
+honest, both learned the hard way:
+
+- `'auto'` is not in `SUPPORTED_LANGS` (it also feeds `normaliseLang()` and the
+  i18n table checks, which need real languages), so the route maps it explicitly
+  and `resolveLang()` is unit-tested. A route that quietly rewrote `'auto'` to
+  `'en'` produced Hindi questions answered in Hindi while the UI was in English.
+- An explicit `lang: 'en'` sent alongside Devanagari or Telugu is treated as a
+  stale client and ignored. `'en'` plus a clear non-Latin script is never a
+  considered choice — a caller wanting English can write the question in English.
+
+**A short reply has to justify itself.** `isSubstantive()` requires an answer
+below 40 characters to quote a number or content word from the passages it was
+given, or it is retried and then discarded in favour of the retryable notice.
+Length alone is deliberately not the test: `"43.0 MPa"` is a complete answer to a
+strength question, and rejecting it would be worse than the bug being fixed.
+
 **Everything is escaped.** The frontend's `innerHTML` sink makes unescaped model
 output a script-injection vector, and document titles come from user-supplied
 filenames. Both are escaped, and `test/chunker.test.js` asserts `<script>` and
@@ -262,18 +340,39 @@ that no hardcoded standard codes creep back in.
 boundaries, the RRF order, identifier promotion for a bare `IS 456`, and the
 clause-title repair. It runs in-process with no model calls.
 
+`test/chat-route.test.js` mocks the model to pin the route's half of the
+language contract — that `'auto'` survives, that an absent `lang` is not read as
+English, and that the canned error copy is always keyed by a real language. This
+exists because a bug lived in that line alone, and every other test called
+`answerQuestion()` directly and so could not have caught it.
+
+`test/substance.test.js` covers the short-answer gate against the real clause
+wording from the reported failure, including the case a length check would get
+wrong.
+
 Neither suite costs API quota. Both talk only to local models, so they can be run
 in a loop; the e2e suite is the slow one because it loads and runs real models.
 
 ## Known limitations
 
-- **The current corpus is regulatory, not product.** `data/pdfs` holds
-  regulations, rules, gazette notifications and a recruitment rule — no biscuits,
-  cement, or food limits. Product questions are therefore *correctly* refused
-  (verified: "maximum moisture content in biscuits" and "28 day compressive
-  strength of cement mortar" both return zero passages). The pipeline is working;
-  the corpus just has nothing to answer. Add real product standards to make
-  product queries return grounded answers.
+- **The corpus is SP 21 only**, the summaries of Indian Standards for building
+  materials — 929 pages, 3,445 chunks, one document. It contains cement, concrete,
+  steel, timber, paint, and packaged-drinking-water limits, but it *summarises*
+  standards rather than reproducing them, and it has nothing outside that scope.
+  A question about biscuits (IS 1011) is therefore correctly refused; a question
+  about packaged drinking water TDS retrieves the real clause. The threshold
+  measurements above were taken on this corpus and must be re-run after adding
+  documents.
+- **The generator will state a limit that the clause contradicts.** The most
+  serious remaining defect, and it is a model-quality problem rather than a
+  pipeline one. Asked for the TDS limit in packaged drinking water, sarvam-1
+  answered *"कोई विशिष्ट सीमा नहीं दी गई है"* — "no specific limit is given" —
+  while the clause it had been handed read *"Total dissolved solids shall not
+  exceed 2000 mg per litre"*. Retrieval was correct; the model contradicted it.
+  A confident wrong answer is worse than a refusal, and the substance gate does
+  not catch this one because the reply is long enough and contains no number to
+  cross-check. Fixing it properly needs a stronger generator or a
+  contradiction check against the retrieved clause, not a length heuristic.
 - **Two Hindi PDFs are excluded via `PDF_EXCLUDE`.** `BIS_CA_12032019.pdf` and
   `BIS_CA_Amendment_Regulations_2020.pdf` are Devanagari fee-schedule tables whose
   extracted text has corrupted glyph ordering ("क ाक.र्ग्ा."). They would supply
@@ -282,6 +381,17 @@ in a loop; the e2e suite is the slow one because it loads and runs real models.
 - **Scanned PDFs are not OCR-ed.** `listofproducts.pdf` is a pure scan (22 blank
   pages) and is skipped rather than silently ingested as one junk chunk. It
   needs OCR before it is useful.
+- **A citation highlight can land on a numeric coincidence.** The highlighted
+  span is the first literal occurrence of the clause label in the passage. For a
+  label like `15` that sits among other numbers, the match can be an unrelated
+  figure rather than the requirement itself — one TDS query highlighted
+  `15 percent` from a water-absorption clause. The clause label is present
+  verbatim in ~91.5% of chunks, so the panel usually disambiguates it by
+  surrounding text, but the highlight is a convenience and not proof.
+- **English retrieval for "TDS limit" can miss.** That question has surfaced a
+  brick water-absorption clause at 0.73 similarity — inside the answer band,
+  confidently wrong. It is a retrieval weakness rather than a citation bug, and
+  it is the clearest argument for re-ranking or a second retrieval pass.
 - **Thresholds are model- and corpus-specific.** See the measurements above.
 - **Clause detection is heuristic**, tuned on Indian Standards layout. Documents
   that number requirements unusually may cite a parent clause (e.g. "cl. 5" for
@@ -293,3 +403,11 @@ in a loop; the e2e suite is the slow one because it loads and runs real models.
 `.env` is gitignored and never commit a real key. This repository is a **public
 fork** — if a key was ever pasted into chat, logs, or a commit, rotate it in the
 Google AI console before shipping.
+
+`GET /api/documents/:docId/pdf` takes no filename from the URL: it looks the
+document up by `docId`, reads `source_file` from the database, and refuses any
+resolved path that escapes `config.corpus.pdfDir` (including absolute paths and
+NUL bytes). The filename is never attacker-controlled, so the usual path
+traversal does not apply — the guard is there as a second line of defence. The
+route is unauthenticated, so it exposes the full text of every indexed document
+to anyone who can reach the server.

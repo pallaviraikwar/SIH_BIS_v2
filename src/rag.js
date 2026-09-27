@@ -659,10 +659,22 @@ export async function searchOnly(query, { topK, threshold, lang } = {}) {
 
 function publicSource(p) {
   return {
+    // Carried so a citation can be opened at the page it names. `docId` is a
+    // database identifier, never a path: the frontend builds a link to
+    // /api/documents/<docId>/pdf and the route resolves the filename itself.
+    docId: p.docId ?? null,
     docTitle: p.docTitle,
     clause: p.clause,
     pages: p.pageFrom === p.pageTo ? [p.pageFrom] : [p.pageFrom, p.pageTo],
+    pageFrom: p.pageFrom,
+    pageTo: p.pageTo,
     similarity: Number(p.similarity.toFixed(4)),
+    // The exact text handed to the model, so a reader can check a claim against
+    // the evidence rather than taking the citation on trust. It is the same
+    // string that went into the prompt, which is the only version of "the source"
+    // that means anything — a re-extracted or re-rendered copy could differ from
+    // what was actually read.
+    content: p.content ?? '',
   };
 }
 

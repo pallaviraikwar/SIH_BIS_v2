@@ -684,6 +684,37 @@ export async function getCorpusStats() {
 }
 
 /**
+ * The on-disk filename for one document, resolved by its database id.
+ *
+ * This exists so the PDF route never has to accept a path from the request. The
+ * filename lives in `bis_documents.source_file` and the URL carries only the
+ * docId, so the set of files this server can be made to hand out is exactly the
+ * set that was ingested. Taking a filename from the query string would put
+ * `../` in reach of anyone with a browser.
+ *
+ * Scoped to `status = 'ready'` for the same reason the corpus stats are: a
+ * half-ingested or discarded document is not something a citation should be able
+ * to surface, and its file may not even be complete on disk yet.
+ */
+export async function getDocumentSource(docId) {
+  const { rows } = await query(
+    `select doc_id, doc_title, source_file, page_count, is_scanned
+     from bis_documents
+     where doc_id = $1 and status = 'ready'`,
+    [docId]
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    docId: r.doc_id,
+    docTitle: r.doc_title,
+    sourceFile: r.source_file,
+    pageCount: Number(r.page_count),
+    isScanned: r.is_scanned,
+  };
+}
+
+/**
  * Titles of everything indexed, for scope-aware answers.
  *
  * Used to tell a user what the corpus actually covers, so a refusal is

@@ -14,7 +14,7 @@
     "ingest:force": "node scripts/ingest.js --force",
     "ask": "node scripts/ask.js",
     "calibrate": "node scripts/calibrate.mjs",
-    "test": "node --experimental-test-module-mocks --test \"test/chunker.test.js\" \"test/chat-route.test.js\" \"test/directory.test.js\" \"test/i18n.test.js\" \"test/ingest-preflight.test.js\" \"test/ingest-safety.test.js\" \"test/provider.test.js\" \"test/retrieval.test.js\" \"test/ollama.test.js\" \"test/substance.test.js\" \"test/title.test.js\" \"test/translator.test.js\"",
+    "test": "node --experimental-test-module-mocks --test \"test/chunker.test.js\" \"test/citations.test.js\" \"test/chat-route.test.js\" \"test/directory.test.js\" \"test/i18n.test.js\" \"test/ingest-preflight.test.js\" \"test/ingest-safety.test.js\" \"test/provider.test.js\" \"test/retrieval.test.js\" \"test/ollama.test.js\" \"test/substance.test.js\" \"test/title.test.js\" \"test/translator.test.js\"",
     "test:e2e": "node --experimental-test-module-mocks --test --test-concurrency=1 \"test/e2e-pipeline.test.js\"",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down"

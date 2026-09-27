@@ -137,6 +137,122 @@
         text-decoration: underline;
     }
     .ask-suggestion:hover { text-decoration: none; }
+
+    /* Citation affordances. A page reference that cannot be opened is only
+       marginally better than no page reference, so the number is a real link
+       into the source PDF. Understated on purpose: it sits inside a citation
+       line that is already dense, and it should read as "this is checkable"
+       rather than as another button competing for attention. */
+    .cite-link {
+        color: var(--link); text-decoration: underline; text-underline-offset: 2px;
+        text-decoration-thickness: 1px; border-radius: 2px;
+    }
+    .cite-link:hover { text-decoration-thickness: 2px; }
+    .cite-link:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+    /* The passage text, revealed so a claim can be checked against what the
+       model actually read rather than taken on trust. */
+    .cite-panel { margin: 4px 0 2px; }
+    .cite-toggle {
+        font-size: 11px; color: var(--ink-faint); cursor: pointer;
+        list-style: none; display: inline-block; padding: 1px 0;
+        border-bottom: 1px dotted var(--rule);
+    }
+    .cite-toggle::-webkit-details-marker { display: none; }
+    .cite-toggle::before { content: '+ '; font-weight: 700; }
+    .cite-panel[open] > .cite-toggle::before { content: '− '; }
+    .cite-toggle:hover { color: var(--link); }
+    .cite-toggle:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+    .cite-excerpt {
+        margin: 5px 0 2px; padding: 7px 9px; border-left: 2px solid var(--rule-soft);
+        background: var(--panel); font-size: 12px; line-height: 1.55;
+        color: var(--ink-soft); white-space: pre-wrap; max-height: 340px;
+        overflow-y: auto; border-radius: 0 3px 3px 0;
+    }
+    /* The cited clause. Warm rather than the link blue, so a highlight in the
+       passage is never mistaken for a control. */
+    .cite-excerpt mark {
+        background: #fef3c7; color: inherit; padding: 0 2px; border-radius: 2px;
+        font-weight: 600; box-shadow: 0 0 0 1px #fcd34d55;
+    }
+
+    /* ---- in-page source viewer ----
+       A fixed overlay, not a column in .wrap. Sizing the transcript instead would
+       reflow every open and close, and the chat is long enough already. */
+    .cite-viewer { position: fixed; inset: 0; z-index: 40; }
+    /* Closed state is visibility, not display, so the panel can transition. The
+       panel is also inert (set by the script) to keep its links out of the tab
+       order while it is off screen. */
+    .cite-viewer { visibility: hidden; transition: visibility 0s linear .18s; }
+    .cite-viewer.open { visibility: visible; transition: visibility 0s; }
+
+    .cite-viewer-scrim {
+        position: absolute; inset: 0; background: #1a1a1a59;
+        opacity: 0; transition: opacity .18s ease;
+    }
+    .cite-viewer.open .cite-viewer-scrim { opacity: 1; }
+
+    .cite-viewer-panel {
+        position: absolute; top: 0; right: 0; height: 100%;
+        width: min(520px, 100vw);
+        display: flex; flex-direction: column;
+        background: var(--page); border-left: 1px solid var(--rule);
+        box-shadow: -8px 0 24px #00000014;
+        transform: translateX(100%); transition: transform .18s ease;
+    }
+    .cite-viewer.open .cite-viewer-panel { transform: translateX(0); }
+
+    .cite-viewer-head {
+        display: flex; align-items: flex-start; gap: 10px;
+        padding: 13px 14px 11px; border-bottom: 1px solid var(--rule-soft);
+    }
+    .cite-viewer-titles { flex: 1; min-width: 0; }
+    .cite-viewer-doc {
+        font-size: 13px; font-weight: 600; color: var(--ink);
+        /* Document titles are long; wrap rather than push the close button out. */
+        overflow-wrap: anywhere;
+    }
+    .cite-viewer-meta { font-size: 11px; color: var(--ink-faint); margin-top: 2px; }
+    .cite-viewer-x {
+        flex-shrink: 0; width: 26px; height: 26px; line-height: 1;
+        font-size: 19px; color: var(--ink-faint);
+        background: none; border: 1px solid transparent; border-radius: 3px;
+        cursor: pointer;
+    }
+    .cite-viewer-x:hover { color: var(--ink); background: var(--panel); border-color: var(--rule); }
+    .cite-viewer-x:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+
+    /* The passage, capped so the document keeps most of the panel. Scrolls. */
+    .cite-viewer-excerpt {
+        flex-shrink: 0; max-height: 26vh; overflow-y: auto;
+        padding: 11px 14px; border-bottom: 1px solid var(--rule-soft);
+        background: var(--panel); font-size: 12px; line-height: 1.55;
+        color: var(--ink-soft); white-space: pre-wrap;
+    }
+    .cite-viewer-excerpt mark {
+        background: #fef3c7; color: inherit; padding: 0 2px; border-radius: 2px;
+        font-weight: 600; box-shadow: 0 0 0 1px #fcd34d55;
+    }
+    .cite-viewer-frame { flex: 1; width: 100%; border: 0; background: var(--panel); }
+
+    .cite-viewer-foot {
+        flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+        padding: 8px 14px; border-top: 1px solid var(--rule-soft);
+        font-size: 11px; color: var(--ink-faint);
+    }
+    .cite-viewer-note { flex: 1; }
+    .cite-viewer-newtab { color: var(--link); white-space: nowrap; }
+
+    /* The sidebar is already display:none at this width, so the viewer takes the
+       whole screen rather than covering the conversation it was opened from. */
+    @media (max-width: 860px) {
+        .cite-viewer-panel { width: 100vw; }
+        .cite-viewer-excerpt { max-height: 30vh; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .cite-viewer, .cite-viewer-scrim, .cite-viewer-panel { transition: none; }
+    }
+
     .notice {
         border: 1px solid #e3d3ae; background: var(--warn-bg); color: var(--warn);
         padding: 9px 11px; border-radius: 3px; font-size: 13px; margin-bottom: 9px;
@@ -225,6 +341,39 @@
     <main id="chatBox"></main>
 </div>
 
+<!-- In-page source viewer. A slide-over rather than a new tab so the answer stays
+     on screen next to the page it cites.
+     The iframe is the browser's own PDF viewer: no PDF.js, no new dependency. That
+     costs us two things and both are worked around in the markup below -- the
+     route must send Content-Disposition:inline or the frame triggers a download
+     instead of rendering, and #page= seeking inside a frame is reliable in
+     Chrome/Edge/Firefox but unverified in Safari. The excerpt above the frame and
+     the "open in new tab" link are what keep this honest when that fails. -->
+<div class="cite-viewer" id="citeViewer" aria-hidden="true" inert>
+    <div class="cite-viewer-scrim" data-cite-close></div>
+    <aside class="cite-viewer-panel" role="dialog" aria-modal="true" aria-labelledby="citeViewerTitle">
+        <div class="cite-viewer-head">
+            <div class="cite-viewer-titles">
+                <div class="cite-viewer-doc" id="citeViewerTitle"></div>
+                <div class="cite-viewer-meta" id="citeViewerMeta"></div>
+            </div>
+            <button type="button" class="cite-viewer-x" data-cite-close
+                    data-i18n-aria="closeSource" aria-label="Close source">&times;</button>
+        </div>
+        <!-- The exact passage that was read, shown before the document so the claim
+             is checkable even if the frame below never paints. -->
+        <div class="cite-viewer-excerpt" id="citeViewerExcerpt"></div>
+        <!-- src is set by the script on first open and cleared on close, so a 7.5 MB
+             PDF is never fetched on page load and is released when you dismiss it. -->
+        <iframe class="cite-viewer-frame" id="citeViewerFrame" title="Source document"></iframe>
+        <div class="cite-viewer-foot">
+            <span class="cite-viewer-note" data-i18n="pageNote">The page number is the PDF page, not the printed folio.</span>
+            <a class="cite-viewer-newtab" id="citeViewerNewTab" target="_blank" rel="noopener"
+               data-i18n="openNewTab">Open in new tab</a>
+        </div>
+    </aside>
+</div>
+
 <div class="composer">
     <div class="inner">
         <input type="text" id="userInput" autocomplete="off"
@@ -248,6 +397,9 @@
   "searchHeader": "Search passages",
   "searchPlaceholder": "e.g. clay paving bricks",
   "clearChat": "Clear transcript",
+  "closeSource": "Close source",
+  "openNewTab": "Open in new tab",
+  "pageNote": "The page number is the PDF page, not the printed folio.",
   "askPlaceholder": "Ask about a standard, a clause, or an IS number",
   "askButton": "Ask",
   "emptyState": "Ask a question about the indexed BIS documents. Answers come only from those documents, with the clause and page shown.",
@@ -277,6 +429,9 @@
   "searchHeader": "अनुच्छेद खोजें",
   "searchPlaceholder": "जैसे clay paving bricks",
   "clearChat": "वार्तालाप साफ़ करें",
+  "closeSource": "स्रोत बंद करें",
+  "openNewTab": "नए टैब में खोलें",
+  "pageNote": "पृष्ठ संख्या PDF पृष्ठ है, मुद्रित पृष्ठ संख्या नहीं।",
   "askPlaceholder": "किसी मानक, खंड या IS नंबर के बारे में पूछें",
   "askButton": "पूछें",
   "emptyState": "अनुक्रमित BIS दस्तावेज़ों के बारे में प्रश्न पूछें। उत्तर केवल उन्हीं दस्तावेज़ों से आते हैं, खंड और पृष्ठ सहित।",
@@ -306,6 +461,9 @@
   "searchHeader": "ਅਨੁਕਰਮ ਖੋਜੋ",
   "searchPlaceholder": "ਜਿਵੇਂ clay paving bricks",
   "clearChat": "ਗੱਲਬਾਤ ਸਾਫ਼ ਕਰੋ",
+  "closeSource": "ਸਰੋਤ ਬੰਦ ਕਰੋ",
+  "openNewTab": "ਨਵੇਂ ਟੈਬ ਵਿੱਚ ਖੋਲ੍ਹੋ",
+  "pageNote": "ਪੰਨਾ ਨੰਬਰ PDF ਪੰਨਾ ਹੈ, ਛਪੀ ਪੰਨਾ ਨੰਬਰ ਨਹੀਂ।",
   "askPlaceholder": "ਕਿਸੇ ਮਿਆਰ, ਖੰਡ ਜਾਂ IS ਨੰਬਰ ਬਾਰੇ ਪੁੱਛੋ",
   "askButton": "ਪੁੱਛੋ",
   "emptyState": "ਇੰਡੈਕਸ ਕੀਤੇ BIS ਦਸਤਾਵੇਜ਼ਾਂ ਬਾਰੇ ਪੁੱਛੋ। ਜਵਾਬ ਸਿਰਫ਼ ਉਨ੍ਹਾਂ ਹੀ ਦਸਤਾਵੇਜ਼ਾਂ ਤੋਂ ਆਉਂਦੇ ਹਨ, ਖੰਡ ਅਤੇ ਪੰਨੇ ਸਹਿਤ।",
@@ -335,6 +493,9 @@
   "searchHeader": "భాగాల్లో వెతకండి",
   "searchPlaceholder": "ఉదా. clay paving bricks",
   "clearChat": "చాట్ తొలగించండి",
+  "closeSource": "మూలం మూసివేయండి",
+  "openNewTab": "కొత్త ట్యాబ్‌లో తెరవండి",
+  "pageNote": "పేజీ సంఖ్య PDF పేజీ, ముద్రించిన పేజీ సంఖ్య కాదు.",
   "askPlaceholder": "ప్రమాణం, ఖండం లేదా IS సంఖ్య గురించి అడగండి",
   "askButton": "అడగండి",
   "emptyState": "ఇండెక్స్ చేసిన BIS పత్రాల గురించి అడగండి. సమాధానాలు ఆ పత్రాల నుండే వస్తాయి, ఖండం, పేజీతో సహా.",
@@ -396,6 +557,92 @@ for (const host of [chatBox, document.getElementById('topicList'), document.getE
         }
     });
 }
+
+/* ---------- in-page source viewer ---------- */
+
+const citeViewer = document.getElementById('citeViewer');
+const citeFrame = document.getElementById('citeViewerFrame');
+const citeTitle = document.getElementById('citeViewerTitle');
+const citeMeta = document.getElementById('citeViewerMeta');
+const citeExcerpt = document.getElementById('citeViewerExcerpt');
+const citeNewTab = document.getElementById('citeViewerNewTab');
+
+// The link that opened the viewer, so focus can go back where it came from.
+let citeReturnFocus = null;
+
+// The clause is re-marked here rather than shipped as markup, because the server
+// already renders a marked copy into the <details> panel and a second rendered
+// copy in an attribute would be a third thing to keep in sync.
+//
+// The search runs on already-escaped text on both sides. That works only because
+// the server's escapeHtml() and esc() replace the same five characters the same
+// way, so an escaped clause is findable in an escaped passage. A clause that is
+// absent simply gets no highlight, which is the same outcome the server produces.
+//
+// Same rule as citationPanel() in src/render.js: the *first* occurrence only.
+function markClause(excerpt, clause) {
+    if (!excerpt) return '';
+    if (!clause) return excerpt;
+    const at = excerpt.indexOf(clause);
+    if (at < 0) return excerpt;
+    return excerpt.slice(0, at) + '<mark>' + clause + '</mark>' + excerpt.slice(at + clause.length);
+}
+
+function openCite(link) {
+    const d = link.dataset;
+    citeTitle.textContent = d.title || d.doc;
+    citeMeta.textContent = (d.clause ? 'cl. ' + d.clause + ' · ' : '') + 'p. ' + d.page;
+    citeExcerpt.innerHTML = markClause(d.excerpt || '', d.clause || '');
+    citeNewTab.href = link.href;
+
+    // Assigned per open rather than kept, so the previous document is unloaded
+    // when a different citation is chosen.
+    const want = '/api/documents/' + encodeURIComponent(d.doc) + '/pdf#page=' + encodeURIComponent(d.page);
+    if (citeFrame.getAttribute('src') !== want) citeFrame.setAttribute('src', want);
+
+    if (!citeViewer.classList.contains('open')) {
+        citeReturnFocus = link;
+        citeViewer.classList.add('open');
+        citeViewer.setAttribute('aria-hidden', 'false');
+        // inert while off screen would hide it from the tab order, but the panel is
+        // visible during the transition, so it is removed once open and set on close.
+        citeViewer.removeAttribute('inert');
+        citeViewer.querySelector('.cite-viewer-x').focus();
+    }
+}
+
+function closeCite() {
+    if (!citeViewer.classList.contains('open')) return;
+    citeViewer.classList.remove('open');
+    citeViewer.setAttribute('aria-hidden', 'true');
+    citeViewer.setAttribute('inert', '');
+    // Cleared so a 7.5 MB PDF is released instead of being held for the session.
+    citeFrame.removeAttribute('src');
+    if (citeReturnFocus) {
+        citeReturnFocus.focus();
+        citeReturnFocus = null;
+    }
+}
+
+// One delegated handler covers the answer, the near-match reply and the located
+// reply, because .cite-link is rendered into all three by the server.
+chatBox.addEventListener('click', (e) => {
+    const link = e.target.closest('a.cite-link[data-doc]');
+    if (!link) return;
+    // Modified clicks are left alone so middle-click and ctrl-click still open a
+    // new tab, which is the behaviour a plain link is expected to have.
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    openCite(link);
+});
+
+document.getElementById('citeViewer').addEventListener('click', (e) => {
+    if (e.target.closest('[data-cite-close]')) closeCite();
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeCite();
+});
 
 /* ---------- transcript ---------- */
 
@@ -636,6 +883,12 @@ function applyLanguage(next) {
     document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
         const v = I18N[lang][el.getAttribute('data-i18n-placeholder')];
         if (v) el.placeholder = v;
+    });
+    // data-i18n only sets textContent, so attributes need their own pass. Used by
+    // the source viewer's close button, whose accessible name must translate too.
+    document.querySelectorAll('[data-i18n-aria]').forEach((el) => {
+        const v = I18N[lang][el.getAttribute('data-i18n-aria')];
+        if (v) el.setAttribute('aria-label', v);
     });
     document.getElementById('topicNote').textContent = t('topicsNote');
     document.getElementById('stdSearch').placeholder = t('searchPlaceholder');
