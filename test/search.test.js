@@ -189,7 +189,7 @@ function get(url) {
 }
 
 test('GET /api/search answers the sidebar with a band and a score', async () => {
-  // This is the request BIS_Assistant_frontend.html:802 makes. It was returning
+  // This is the request public/app.js makes. It was returning
   // 500 for every query, and the frontend reported it as a connection failure
   // rather than a server fault.
   const r = await get('/search?q=biscuits&k=8');

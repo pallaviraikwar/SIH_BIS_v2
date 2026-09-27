@@ -14,21 +14,23 @@ import { fileURLToPath } from 'node:url';
  */
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const html = fs.readFileSync(path.join(ROOT, 'BIS_Assistant_frontend.html'), 'utf8');
+const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
+const js = fs.readFileSync(path.join(ROOT, 'public', 'app.js'), 'utf8');
+const i18nSrc = fs.readFileSync(path.join(ROOT, 'public', 'app-i18n.js'), 'utf8');
 
 /**
- * The page keeps its UI strings in <script type="application/json"> blocks so a
- * test can diff the four languages for missing keys. The stub therefore has to
- * hand those tables back verbatim, or the page's own first line of script throws
- * on JSON.parse(undefined) before any of this logic runs.
+ * The page keeps its UI strings in app-i18n.js, as `window.I18N = { ... }` with
+ * every key quoted, so a test can diff the four languages for missing keys. The
+ * stub therefore has to hand those tables back verbatim, or the page's own first
+ * line of script throws before any of this logic runs.
+ *
+ * Stripping the assignment rather than eval'ing the file keeps this a parse of
+ * data: the object literal is valid JSON precisely because every key is quoted.
  */
+const I18N = JSON.parse(i18nSrc.replace(/^[\s\S]*?window\.I18N\s*=\s*/, '').replace(/;\s*$/, ''));
+
 const I18N_TABLES = Object.fromEntries(
-  ['en', 'hi', 'pa', 'te'].map((lang) => [
-    lang,
-    html.match(
-      new RegExp(`<script type="application/json" id="i18n-${lang}">([\\s\\S]*?)</script>`)
-    )[1],
-  ])
+  ['en', 'hi', 'pa', 'te'].map((lang) => [lang, JSON.stringify(I18N[lang])])
 );
 
 function makeEl() {
@@ -135,8 +137,12 @@ function boot() {
     },
   };
   sandbox.globalThis = sandbox;
+  // index.html loads app-i18n.js as a classic <script> before app.js, so the
+  // tables are on window by the time the page script runs. The sandbox has to
+  // reproduce that order or `const I18N = window.I18N` reads undefined.
+  sandbox.window.I18N = I18N;
   vm.createContext(sandbox);
-  vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], sandbox);
+  vm.runInContext(js, sandbox);
 
   return {
     sandbox,
@@ -315,14 +321,14 @@ test('the language <select> is gone and a static hint replaced it', () => {
   // Matched as a declaration or a call, not a bare substring: the function's own
   // doc comment still names setLanguage when explaining what it replaced.
   assert.ok(
-    !/function\s+setLanguage|onchange="setLanguage/.test(html),
+    !/function\s+setLanguage|onchange="setLanguage/.test(html + js),
     'setLanguage is back; the app should drive applyLanguage'
   );
-  assert.match(html, /function applyLanguage\(/, 'applyLanguage should be what switches the labels');
+  assert.match(js, /function applyLanguage\(/, 'applyLanguage should be what switches the labels');
   assert.match(html, /Ask in any language/, 'the hint advertising multilingual input is missing');
   // The request must not carry a pinned language, or detection is overridden by
   // whatever the client last displayed — the original bug.
-  assert.match(html, /lang: 'auto'/);
+  assert.match(js, /lang: 'auto'/);
 });
 
 test('contains no hardcoded standard data', () => {
