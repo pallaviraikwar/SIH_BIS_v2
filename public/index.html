@@ -122,15 +122,17 @@
 
 <div class="composer">
     <div class="inner">
-        <input type="text" id="userInput" autocomplete="off"
-               data-i18n-placeholder="askPlaceholder"
-               placeholder="Ask about a standard, a clause, or an IS number"
-               onkeydown="if(event.key==='Enter') send()">
+        <textarea id="userInput" rows="1" autocomplete="off"
+                  data-i18n-placeholder="askPlaceholder"
+                  placeholder="Ask about a standard, a clause, or an IS number"
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"></textarea>
         <button id="sendBtn" onclick="onSendClick()" data-i18n="askButton">Ask</button>
     </div>
 </div>
 
-<!-- UI strings as JSON so the four languages can be diffed by the test suite.
+<!-- The language tables are in app-i18n.js, loaded in the head above: a test
+     parses them to diff all four, and a classic <script> there means window.I18N
+     is set before app.js runs, so t() resolves on the first paint. -->
 <script src="app.js"></script>
 </body>
 </html>

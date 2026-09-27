@@ -19,6 +19,43 @@ const chatBox = document.getElementById('chatBox');
 const input = document.getElementById('userInput');
 const sendBtn = document.getElementById('sendBtn');
 
+// Must match .composer textarea max-height in app.css. Past this the box scrolls
+// rather than growing, so a pasted standard number cannot push the transcript
+// off the top of the screen.
+const INPUT_MAX_H = 190;
+
+/* The textarea grows with what is typed, up to INPUT_MAX_H.
+
+   Height is reset to 'auto' before measuring, because scrollHeight of a textarea
+   is its *content* height only when the box is not already taller than it -- so
+   without the reset the box can shrink on deletion but never grows past the
+   height it has already reached, and a second longer question scrolls instead. */
+function resizeInput() {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, INPUT_MAX_H) + 'px';
+}
+
+input.addEventListener('input', resizeInput);
+
+/* main reserves the composer's height so a grown textarea cannot cover the last
+   answer. The textarea's growth changes that height, so it is observed rather
+   than recomputed on every keystroke; the fallback branch covers a browser
+   without ResizeObserver, where the initial 96px in app.css stands. */
+function resizeComposer() {
+    const box = document.querySelector('.composer');
+    if (!box) return;
+    document.documentElement.style.setProperty('--composer-h', box.offsetHeight + 'px');
+}
+
+const composerEl = document.querySelector('.composer');
+if (composerEl) {
+    if (typeof ResizeObserver === 'function') {
+        new ResizeObserver(resizeComposer).observe(composerEl);
+    } else {
+        resizeComposer();
+    }
+}
+
 function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) =>
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -389,6 +426,7 @@ async function send() {
     if (inflight) return;
 
     input.value = '';
+    resizeInput();
     setSendLabel('stopButton');
     const controller = new AbortController();
     inflight = controller;
@@ -445,6 +483,7 @@ async function send() {
             // question goes back in the composer rather than being dropped: they
             // cancelled the wait, not the question.
             input.value = text;
+            resizeInput();
         } else {
             notice(esc(t('connError')));
         }
@@ -457,6 +496,7 @@ async function send() {
 
 function ask(text) {
     input.value = text;
+    resizeInput();
     send();
 }
 

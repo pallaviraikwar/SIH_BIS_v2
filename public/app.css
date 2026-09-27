@@ -24,6 +24,12 @@
         --mark-bg: #fef3c7;
         --mark-ink: #555;
         --mark-edge: #fcd34d55;
+        --bubble: #f0f0f0;
+        --radius-sm: 8px;
+        --radius: 12px;
+        --radius-lg: 22px;
+        --shadow-1: rgba(0, 0, 0, 0.07);
+        --shadow-2: rgba(0, 0, 0, 0.13);
     }
 
     /* Every colour in this file is a token, and this block is the only thing that
@@ -52,6 +58,12 @@
             --mark-bg: #4a3c14;
             --mark-ink: #f2e3bd;
             --mark-edge: #f2e3bd33;
+            --bubble: #2b2f34;
+            --radius-sm: 8px;
+            --radius: 12px;
+            --radius-lg: 22px;
+            --shadow-1: rgba(0, 0, 0, 0.45);
+            --shadow-2: rgba(0, 0, 0, 0.55);
         }
     }
     /* ---- forced themes ----
@@ -91,6 +103,12 @@
         --mark-bg: #fef3c7;
         --mark-ink: #555;
         --mark-edge: #fcd34d55;
+        --bubble: #f0f0f0;
+        --radius-sm: 8px;
+        --radius: 12px;
+        --radius-lg: 22px;
+        --shadow-1: rgba(0, 0, 0, 0.07);
+        --shadow-2: rgba(0, 0, 0, 0.13);
     }
 
     :root[data-theme='dark'] {
@@ -108,6 +126,12 @@
         --mark-bg: #4a3c14;
         --mark-ink: #f2e3bd;
         --mark-edge: #f2e3bd33;
+        --bubble: #2b2f34;
+        --radius-sm: 8px;
+        --radius: 12px;
+        --radius-lg: 22px;
+        --shadow-1: rgba(0, 0, 0, 0.45);
+        --shadow-2: rgba(0, 0, 0, 0.55);
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -198,7 +222,11 @@
         position: sticky; top: 0; align-self: flex-start;
         max-height: 100vh; overflow-y: auto;
     }
-    main { flex: 1; min-width: 0; padding: 20px 24px 120px; }
+    /* The composer is fixed and the textarea grows to 190px, so the space
+       reserved for it is measured and published as --composer-h rather than
+       guessed: 120px was right for the old single-line field and would have let a
+       tall composer cover the last answer. See resizeComposer() in app.js. */
+    main { flex: 1; min-width: 0; padding: 20px 24px calc(var(--composer-h, 96px) + 20px); }
 
     .side-h {
         font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
@@ -279,15 +307,23 @@
        the 55-80ch band, and the composer's copy is the same literal so the two
        cannot drift. Change one, change both. */
     .turn {
-        padding: 16px 0; border-bottom: 1px solid var(--rule-soft);
+        padding: 18px 0 20px;
         max-width: 68ch; margin-inline: auto;
     }
-    .turn:last-child { border-bottom: none; }
-    .q { font-weight: 600; font-size: 15px; }
+    /* The question is a bubble and the answer is not. The answer carries the
+       citations and the clause highlights, and a tint behind it competes with the
+       mark fill for the reader's eye -- so only the side that is "said" gets a
+       surface, and the side that is "sourced" stays on the page. */
+    .q {
+        display: inline-block; max-width: 100%;
+        font-weight: 600; font-size: 15px; line-height: 1.5;
+        background: var(--bubble); color: var(--ink);
+        border-radius: var(--radius); padding: 10px 14px;
+    }
     /* break-word rather than anywhere for prose: anywhere can break inside an
        ordinary word, and an answer contains IS numbers, clause references and the
        occasional long token that should wrap but not shatter. */
-    .a { margin-top: 8px; overflow-wrap: break-word; }
+    .a { margin-top: 14px; overflow-wrap: break-word; }
     .tag {
         display: inline-block; font-size: 11px; font-weight: 400;
         color: var(--ink-faint); border: 1px solid var(--rule);
@@ -443,7 +479,8 @@
 
     .notice {
         border: 1px solid color-mix(in srgb, var(--warn) 32%, var(--page)); background: var(--warn-bg); color: var(--warn);
-        padding: 9px 11px; border-radius: 3px; font-size: 13px; margin-bottom: 9px;
+        padding: 12px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 12px;
+        box-shadow: var(--shadow-1);
         /* The same measure and the same centring as a turn, so a failure is a band
            across the reading column rather than a small box floating in the middle
            of a wide one. */
@@ -462,14 +499,28 @@
        Same 68ch literal, same reason it is a literal. */
     .composer .inner {
         display: flex; gap: 8px; max-width: 68ch; margin-inline: auto;
+        border: 1px solid var(--rule); border-radius: var(--radius-lg);
+        background: var(--page); box-shadow: var(--shadow-2);
+        padding: 5px 5px 5px 14px; align-items: flex-end;
     }
-    .composer input {
-        flex: 1; font: inherit; padding: 8px 10px;
-        border: 1px solid var(--rule); border-radius: 3px; background: var(--page);
+    .composer textarea {
+        flex: 1; font: inherit; line-height: 1.5; padding: 8px 0; margin: 0;
+        border: 0; background: transparent; resize: none;
+        max-height: 190px; overflow-y: auto; min-width: 0;
+    }
+    .composer textarea:focus { outline: none; }
+    /* ...and the ring moves to the box instead of disappearing. A borderless field
+       with outline:none and no replacement is a keyboard user with no idea where
+       they are typing, so focus-within on the wrapper is what carries it -- which
+       is also the honest target, since the visible control is the whole box. */
+    .composer .inner:focus-within {
+        border-color: var(--link);
+        box-shadow: var(--shadow-2), 0 0 0 3px color-mix(in srgb, var(--link) 20%, transparent);
     }
     .composer button {
-        font: inherit; font-size: 14px; padding: 8px 18px; cursor: pointer;
-        background: var(--ink); color: var(--page); border: 1px solid var(--ink); border-radius: 3px;
+        font: inherit; font-size: 14px; padding: 9px 18px; cursor: pointer; flex: none;
+        background: var(--ink); color: var(--page); border: 1px solid var(--ink);
+        border-radius: 999px;
     }
     .composer button:disabled { opacity: .55; cursor: default; }
 
@@ -536,7 +587,7 @@
            36px and a sidebar row 30px, which on a phone is a miss often enough to
            be worth the extra row height. */
         .composer button { padding: 11px 20px; }
-        .composer input { padding: 11px 10px; }
+        .composer textarea { padding: 11px 0; }
         .side-btn { padding: 9px 7px; }
         .dir-card { padding: 10px; }
         .plain-btn { padding: 9px 12px; }
@@ -546,17 +597,15 @@
         .theme-btn { width: 44px; height: 44px; }
 
         .composer { left: 0; }
-        main { padding: 16px 16px 110px; }
+        main { padding: 16px 16px calc(var(--composer-h, 96px) + 20px); }
     }
 
     /* Removed, and why:
        - .msg-icon circular "AI" avatar badges on every message — the single
          clearest sign of a chat template; a transcript needs no portrait.
-       - pill-shaped composer with a circular send button that scaled on hover.
        - blinking scaling typing dots; replaced by one plain "Thinking…" line.
        - glowing green "Systems Active" dot with a box-shadow bloom.
        - navy sidebar, per-item SVG icons, and a fade-up animation on each message.
-       - soft shadows on every surface and 16px radii.
        - the camera and mic buttons. Their handlers, handleImageUpload and
          startDictation, were never defined anywhere in the file, so both threw a
          ReferenceError on click. There is no OCR or speech path behind them: a
@@ -578,4 +627,27 @@
          of the interface that did not exist on a phone, and the sidebar is the
          only route to passage search and to the topic list -- the same two
          features a hardcoded sidebar was rebuilt around. It is an overlay at that
-         width now, on the citation viewer's terms. See "the index drawer". */
+         width now, on the citation viewer's terms. See "the index drawer".
+
+       Restored, and why -- the pill-shaped composer and the soft shadows and
+       16px+ radii came off this list on the same day the rest of the template
+       did, and that was over-correction. Rejected as a *template tell* is not the
+       same as rejected as a *shape*, and these three were carrying the template's
+       visual signature while doing nothing for its function: a raised composer
+       reads as one control instead of a field with a button parked beside it, and
+       a radius tells the eye where one surface ends before a hairline has to.
+       So the shapes came back as tokens (--radius, --radius-lg, --shadow-1,
+       --shadow-2, --bubble), declared in all four palette blocks and measured
+       like any other colour, and the *tells* stayed away: no avatars, no typing
+       animation, no navy sidebar. A question is a --bubble block and the answer
+       is not, because the answer carries the citations and the clause highlight
+       and a tint behind it competes with the mark fill for the eye.
+
+       Still not coming back, deliberately:
+       - a circular send button that scaled on hover. The button keeps its Ask /
+         Stop *text*, because setSendLabel() writes it from the i18n table and
+         applyLanguage() rewrites it when the server answers in another language.
+         An icon-only button would be wiped by the first of those and the second
+         would have nothing to rewrite -- and four languages would need a glyph
+         that means "send" in all of them. The text is also the accessible name. */
+

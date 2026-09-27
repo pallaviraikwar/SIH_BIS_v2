@@ -47,10 +47,14 @@ function makeEl() {
     // Attribute writes are recorded rather than dropped, so a test can assert on
     // what the page script told the DOM -- the theme button's accessible name is
     // set this way, and an empty stub would make that assertion vacuous.
-    attrs: {},
-    textContent: '',
-    value: '',
-  };
+      attrs: {},
+      textContent: '',
+      value: '',
+      // The page script reads this to publish --composer-h. A real element
+      // measures; a stub that left it undefined would make the page script emit
+      // "undefinedpx" and the assertion on the published value vacuous.
+      offsetHeight: 76,
+    };
 }
 
 /** Boots the page script with a stubbed DOM and a manually-resolved fetch. */
@@ -73,6 +77,10 @@ function boot() {
   // removes it for "system". A plain {} would throw on the first set and, worse,
   // would let a test that never looks here pass while the switch does nothing.
   const rootAttrs = new Map();
+  // The composer measures itself and publishes --composer-h on the root, which is
+  // how main reserves the right amount of space. Recorded rather than swallowed,
+  // so a test can assert the page script actually publishes it.
+  const rootVars = new Map();
   const doc = {
     getElementById: (id) => {
       // The i18n tables are read as textContent, the rest as elements. There is no
@@ -101,6 +109,11 @@ function boot() {
       setAttribute: (k, v) => rootAttrs.set(k, v),
       removeAttribute: (k) => rootAttrs.delete(k),
       getAttribute: (k) => (rootAttrs.has(k) ? rootAttrs.get(k) : null),
+      style: {
+        setProperty: (k, v) => rootVars.set(k, v),
+        removeProperty: (k) => rootVars.delete(k),
+        getPropertyValue: (k) => rootVars.get(k) ?? '',
+      },
     },
   };
 
@@ -148,6 +161,7 @@ function boot() {
     sandbox,
     requests,
     pending,
+    rootVars,
     results: containers.searchResults,
     topics: containers.topicList,
     box: inputs.stdSearch,
@@ -311,6 +325,20 @@ test('relabelling the panel does not spend an embedding call', async () => {
   assert.equal(p.searchCalls().length, searches, 'relabelling must not spend an embedding call');
   assert.equal(p.topicCalls().length, topics, 'relabelling must not refetch the sidebar');
   assert.equal(p.sandbox.document.documentElement.lang, 'hi', 'the document language should follow');
+});
+
+test('the composer publishes its height, so it cannot cover the last answer', () => {
+  // The composer is fixed to the bottom and the textarea grows to 190px, so main
+  // reserves space for it. The reservation is a custom property set from the
+  // measured height rather than a constant: the old 120px was right for a
+  // single-line field and would have hidden a tall composer's last answer.
+  const app = boot();
+  assert.ok(
+    app.rootVars.has('--composer-h'),
+    'the page script never published --composer-h, so main is reserving a guess'
+  );
+  const h = app.rootVars.get('--composer-h');
+  assert.match(h, /^\d+(\.\d+)?px$/, `--composer-h should be a length, got ${h}`);
 });
 
 test('the language <select> is gone and a static hint replaced it', () => {

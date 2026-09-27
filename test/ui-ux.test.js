@@ -132,8 +132,12 @@ function schemeTokens(which) {
  * instead of being written out four times and drifting apart.
  */
 const AA_PAIRS = [
-    ['ink', 'page'],
-    ['ink-soft', 'page'],
+      ['ink', 'page'],
+      ['ink-soft', 'page'],
+      // The question bubble. A new surface has to be measured like any other: the
+      // bubble is --bubble, and --ink on it is the reading of the user's own
+      // question, which is the one line of the transcript guaranteed to be there.
+      ['ink', 'bubble'],
     // 4.48:1 before the fix, and it carries the 11px sidebar labels, the language
     // tag, the citation toggle and every page number.
     ['ink-faint', 'page'],
