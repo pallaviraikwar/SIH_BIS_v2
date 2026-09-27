@@ -14,21 +14,23 @@ import { fileURLToPath } from 'node:url';
  */
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const html = fs.readFileSync(path.join(ROOT, 'BIS_Assistant_frontend.html'), 'utf8');
+const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
+const js = fs.readFileSync(path.join(ROOT, 'public', 'app.js'), 'utf8');
+const i18nSrc = fs.readFileSync(path.join(ROOT, 'public', 'app-i18n.js'), 'utf8');
 
 /**
- * The page keeps its UI strings in <script type="application/json"> blocks so a
- * test can diff the four languages for missing keys. The stub therefore has to
- * hand those tables back verbatim, or the page's own first line of script throws
- * on JSON.parse(undefined) before any of this logic runs.
+ * The page keeps its UI strings in app-i18n.js, as `window.I18N = { ... }` with
+ * every key quoted, so a test can diff the four languages for missing keys. The
+ * stub therefore has to hand those tables back verbatim, or the page's own first
+ * line of script throws before any of this logic runs.
+ *
+ * Stripping the assignment rather than eval'ing the file keeps this a parse of
+ * data: the object literal is valid JSON precisely because every key is quoted.
  */
+const I18N = JSON.parse(i18nSrc.replace(/^[\s\S]*?window\.I18N\s*=\s*/, '').replace(/;\s*$/, ''));
+
 const I18N_TABLES = Object.fromEntries(
-  ['en', 'hi', 'pa', 'te'].map((lang) => [
-    lang,
-    html.match(
-      new RegExp(`<script type="application/json" id="i18n-${lang}">([\\s\\S]*?)</script>`)
-    )[1],
-  ])
+  ['en', 'hi', 'pa', 'te'].map((lang) => [lang, JSON.stringify(I18N[lang])])
 );
 
 function makeEl() {
@@ -45,10 +47,14 @@ function makeEl() {
     // Attribute writes are recorded rather than dropped, so a test can assert on
     // what the page script told the DOM -- the theme button's accessible name is
     // set this way, and an empty stub would make that assertion vacuous.
-    attrs: {},
-    textContent: '',
-    value: '',
-  };
+      attrs: {},
+      textContent: '',
+      value: '',
+      // The page script reads this to publish --composer-h. A real element
+      // measures; a stub that left it undefined would make the page script emit
+      // "undefinedpx" and the assertion on the published value vacuous.
+      offsetHeight: 76,
+    };
 }
 
 /** Boots the page script with a stubbed DOM and a manually-resolved fetch. */
@@ -71,6 +77,10 @@ function boot() {
   // removes it for "system". A plain {} would throw on the first set and, worse,
   // would let a test that never looks here pass while the switch does nothing.
   const rootAttrs = new Map();
+  // The composer measures itself and publishes --composer-h on the root, which is
+  // how main reserves the right amount of space. Recorded rather than swallowed,
+  // so a test can assert the page script actually publishes it.
+  const rootVars = new Map();
   const doc = {
     getElementById: (id) => {
       // The i18n tables are read as textContent, the rest as elements. There is no
@@ -99,6 +109,11 @@ function boot() {
       setAttribute: (k, v) => rootAttrs.set(k, v),
       removeAttribute: (k) => rootAttrs.delete(k),
       getAttribute: (k) => (rootAttrs.has(k) ? rootAttrs.get(k) : null),
+      style: {
+        setProperty: (k, v) => rootVars.set(k, v),
+        removeProperty: (k) => rootVars.delete(k),
+        getPropertyValue: (k) => rootVars.get(k) ?? '',
+      },
     },
   };
 
@@ -135,13 +150,18 @@ function boot() {
     },
   };
   sandbox.globalThis = sandbox;
+  // index.html loads app-i18n.js as a classic <script> before app.js, so the
+  // tables are on window by the time the page script runs. The sandbox has to
+  // reproduce that order or `const I18N = window.I18N` reads undefined.
+  sandbox.window.I18N = I18N;
   vm.createContext(sandbox);
-  vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], sandbox);
+  vm.runInContext(js, sandbox);
 
   return {
     sandbox,
     requests,
     pending,
+    rootVars,
     results: containers.searchResults,
     topics: containers.topicList,
     box: inputs.stdSearch,
@@ -307,6 +327,20 @@ test('relabelling the panel does not spend an embedding call', async () => {
   assert.equal(p.sandbox.document.documentElement.lang, 'hi', 'the document language should follow');
 });
 
+test('the composer publishes its height, so it cannot cover the last answer', () => {
+  // The composer is fixed to the bottom and the textarea grows to 190px, so main
+  // reserves space for it. The reservation is a custom property set from the
+  // measured height rather than a constant: the old 120px was right for a
+  // single-line field and would have hidden a tall composer's last answer.
+  const app = boot();
+  assert.ok(
+    app.rootVars.has('--composer-h'),
+    'the page script never published --composer-h, so main is reserving a guess'
+  );
+  const h = app.rootVars.get('--composer-h');
+  assert.match(h, /^\d+(\.\d+)?px$/, `--composer-h should be a length, got ${h}`);
+});
+
 test('the language <select> is gone and a static hint replaced it', () => {
   // The dropdown was the only way to make the interface speak your language, and it
   // had to be found first. Detection from the query removed the need for it, so its
@@ -315,14 +349,14 @@ test('the language <select> is gone and a static hint replaced it', () => {
   // Matched as a declaration or a call, not a bare substring: the function's own
   // doc comment still names setLanguage when explaining what it replaced.
   assert.ok(
-    !/function\s+setLanguage|onchange="setLanguage/.test(html),
+    !/function\s+setLanguage|onchange="setLanguage/.test(html + js),
     'setLanguage is back; the app should drive applyLanguage'
   );
-  assert.match(html, /function applyLanguage\(/, 'applyLanguage should be what switches the labels');
+  assert.match(js, /function applyLanguage\(/, 'applyLanguage should be what switches the labels');
   assert.match(html, /Ask in any language/, 'the hint advertising multilingual input is missing');
   // The request must not carry a pinned language, or detection is overridden by
   // whatever the client last displayed — the original bug.
-  assert.match(html, /lang: 'auto'/);
+  assert.match(js, /lang: 'auto'/);
 });
 
 test('contains no hardcoded standard data', () => {

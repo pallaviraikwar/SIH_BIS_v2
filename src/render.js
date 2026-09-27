@@ -76,7 +76,7 @@ export function pageLink(p, label) {
   // the drawer. It re-escapes with esc(), so esc() and escapeHtml() have to replace
   // the same five characters the same way -- otherwise the drawer and this panel
   // would mark different spans for one citation. See markClause() in
-  // BIS_Assistant_frontend.html.
+  // public/app.js.
   const excerpt = p.content ? escapeHtml(p.content) : '';
   return (
     `<a class="cite-link" href="/api/documents/${encodeURIComponent(p.docId)}/pdf#page=${page}" ` +

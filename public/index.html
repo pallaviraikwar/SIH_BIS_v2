@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BIS Standards Assistant</title>
+<link rel="stylesheet" href="app.css">
+<!-- Styles, behaviour and the four language tables live in app.css, app.js and
+     app-i18n.js. They were inline in this file until it passed 1,500 lines, at
+     which point a change to a colour and a change to a fetch call were edits to
+     the same file and nothing would review as a unit. app-i18n.js loads first
+     because t() is called during first paint and must not have to wait. -->
+<script src="app-i18n.js"></script>
+</head>
+
+<header>
+    <div class="head-left">
+        <!-- The one way into the sidebar below 860px, where it is a drawer. Above
+             that width this is display:none, because the sidebar is already on
+             screen and a trigger there would be a second control that does
+             nothing. aria-expanded and aria-controls are the state contract;
+             openSidebar/closeSidebar own both ends of it. -->
+        <button type="button" class="side-toggle" id="sideToggle"
+                onclick="toggleSidebar()" aria-expanded="false" aria-controls="sidePanel"
+                data-i18n="openIndex" data-i18n-aria="openIndex">Index</button>
+        <div class="head-title">
+            <h1 data-i18n="appTitle">BIS Standards Assistant</h1>
+            <div class="sub" id="corpusLine"></div>
+        </div>
+    </div>
+    <div class="head-right">
+        <div class="runtime" id="runtimeLine"></div>
+        <!-- Light, dark, or whatever the system says. The glyph is the current mode
+             and the title and accessible name are filled from the i18n tables by
+             paintTheme(), which also owns the data-theme attribute on <html>: the
+             attribute is only ever set for an explicit choice, so its absence is what
+             "system" means and the prefers-color-scheme block stays in charge
+             otherwise. No data-i18n here on purpose -- applyLanguage would overwrite
+             a label that depends on the mode. In the header rather than the sidebar
+             because it has to be reachable without opening the drawer. -->
+        <button type="button" class="theme-btn" id="themeBtn"
+                onclick="cycleTheme()" title="Theme: system">◐</button>
+        <!-- No language selector. It existed only to drive the i18n tables below,
+             and it had to be found before the interface would speak your language.
+             The server now detects the script of what you type and reports it back
+             in meta.lang, which switches these tables automatically, so the hint
+             only has to advertise a capability that actually works. -->
+        <div class="anylang" title="Hindi · Telugu · English">Ask in any language</div>
+    </div>
+</header>
+
+<div class="wrap">
+    <!-- The sidebar's scrim. A sibling of the drawer rather than a child of it,
+         because it has to cover the page the drawer is drawn over. display:none
+         above 860px, so a stale .on left by a rotation cannot grey out the app. -->
+    <div class="side-scrim" id="sideScrim" aria-hidden="true"></div>
+
+    <!-- Order is load-bearing, not cosmetic: search first because it is the main
+         route to a passage, then the topic list, then the one destructive action.
+         See #searchResults and #topicList for the caps that stop either region
+         from pushing the others off the panel. -->
+    <aside id="sidePanel" data-i18n-aria="openIndex" aria-label="Index">
+        <div class="side-top">
+            <button type="button" class="side-x" data-side-close
+                    data-i18n-aria="closeIndex" aria-label="Close index">&times;</button>
+        </div>
+
+        <div class="side-block">
+            <div class="side-h" data-i18n="searchHeader">Search passages</div>
+            <input type="text" class="side-input" id="stdSearch"
+                   data-i18n-placeholder="searchPlaceholder"
+                   placeholder="e.g. clay paving bricks" oninput="onSearchInput()">
+            <div id="searchResults"></div>
+        </div>
+
+        <div class="side-block">
+            <div class="side-h" data-i18n="topicsHeader">In this index</div>
+            <ul class="side-list" id="topicList"></ul>
+            <div class="side-note" id="topicNote"></div>
+        </div>
+
+        <div class="side-foot">
+            <button class="plain-btn" onclick="clearChat()" data-i18n="clearChat">Clear transcript</button>
+        </div>
+    </aside>
+
+    <main id="chatBox"></main>
+</div>
+
+<!-- In-page source viewer. A slide-over rather than a new tab so the answer stays
+     on screen next to the page it cites.
+     The iframe is the browser's own PDF viewer: no PDF.js, no new dependency. That
+     costs us two things and both are worked around in the markup below -- the
+     route must send Content-Disposition:inline or the frame triggers a download
+     instead of rendering, and #page= seeking inside a frame is reliable in
+     Chrome/Edge/Firefox but unverified in Safari. The excerpt above the frame and
+     the "open in new tab" link are what keep this honest when that fails. -->
+<div class="cite-viewer" id="citeViewer" aria-hidden="true" inert>
+    <div class="cite-viewer-scrim" data-cite-close></div>
+    <aside class="cite-viewer-panel" role="dialog" aria-modal="true" aria-labelledby="citeViewerTitle">
+        <div class="cite-viewer-head">
+            <div class="cite-viewer-titles">
+                <div class="cite-viewer-doc" id="citeViewerTitle"></div>
+                <div class="cite-viewer-meta" id="citeViewerMeta"></div>
+            </div>
+            <button type="button" class="cite-viewer-x" data-cite-close
+                    data-i18n-aria="closeSource" aria-label="Close source">&times;</button>
+        </div>
+        <!-- The exact passage that was read, shown before the document so the claim
+             is checkable even if the frame below never paints. -->
+        <div class="cite-viewer-excerpt" id="citeViewerExcerpt"></div>
+        <!-- src is set by the script on first open and cleared on close, so a 7.5 MB
+             PDF is never fetched on page load and is released when you dismiss it. -->
+        <iframe class="cite-viewer-frame" id="citeViewerFrame" title="Source document"></iframe>
+        <div class="cite-viewer-foot">
+            <span class="cite-viewer-note" data-i18n="pageNote">The page number is the PDF page, not the printed folio.</span>
+            <a class="cite-viewer-newtab" id="citeViewerNewTab" target="_blank" rel="noopener"
+               data-i18n="openNewTab">Open in new tab</a>
+        </div>
+    </aside>
+</div>
+
+<div class="composer">
+    <div class="inner">
+        <textarea id="userInput" rows="1" autocomplete="off"
+                  data-i18n-placeholder="askPlaceholder"
+                  placeholder="Ask about a standard, a clause, or an IS number"
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"></textarea>
+        <button id="sendBtn" onclick="onSendClick()" data-i18n="askButton">Ask</button>
+    </div>
+</div>
+
+<!-- The language tables are in app-i18n.js, loaded in the head above: a test
+     parses them to diff all four, and a classic <script> there means window.I18N
+     is set before app.js runs, so t() resolves on the first paint. -->
+<script src="app.js"></script>
+</body>
+</html>

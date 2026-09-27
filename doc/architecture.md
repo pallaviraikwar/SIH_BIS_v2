@@ -396,7 +396,7 @@ generation and rendering are untouched, which is why the risk is low.
 | file | what it does |
 |---|---|
 | `server.js` | Starts everything, prints the active models and thresholds |
-| `BIS_Assistant_frontend.html` | The whole UI. Also holds all four language text tables |
+| `public/index.html` | The UI markup. Also holds all four language text tables |
 | `src/rag.js` | **The pipeline.** Decides which path a question takes |
 | `src/store.js` | Retrieval: vector search, full-text search, corpus statistics, the ingest lifecycle |
 | `src/rank.js` | Reciprocal-rank fusion of the two retrieval arms. Pure, no database |

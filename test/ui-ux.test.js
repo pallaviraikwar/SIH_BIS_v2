@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const UI_FILE = new URL('../BIS_Assistant_frontend.html', import.meta.url);
-const html = readFileSync(UI_FILE, 'utf8');
+const UI_DIR = new URL('../public/', import.meta.url);
+const htmlRaw = readFileSync(new URL('index.html', UI_DIR), 'utf8');
+const cssRaw = readFileSync(new URL('app.css', UI_DIR), 'utf8');
+const jsRaw = readFileSync(new URL('app.js', UI_DIR), 'utf8');
 
 /**
  * The page with its comments stripped.
@@ -14,11 +16,12 @@ const html = readFileSync(UI_FILE, 'utf8');
  * would let that documentation satisfy an assertion about the code -- or break one,
  * depending only on how carefully the note was worded.
  */
-const src = html
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+const strip = (text) =>
+  text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
-const css = src.match(/<style>([\s\S]*?)<\/style>/)[1];
+const html = strip(htmlRaw);
+const src = strip(jsRaw);
+const css = strip(cssRaw);
 
 /** WCAG relative luminance. */
 function luminance(hex) {
@@ -129,8 +132,12 @@ function schemeTokens(which) {
  * instead of being written out four times and drifting apart.
  */
 const AA_PAIRS = [
-    ['ink', 'page'],
-    ['ink-soft', 'page'],
+      ['ink', 'page'],
+      ['ink-soft', 'page'],
+      // The question bubble. A new surface has to be measured like any other: the
+      // bubble is --bubble, and --ink on it is the reading of the user's own
+      // question, which is the one line of the transcript guaranteed to be there.
+      ['ink', 'bubble'],
     // 4.48:1 before the fix, and it carries the 11px sidebar labels, the language
     // tag, the citation toggle and every page number.
     ['ink-faint', 'page'],
@@ -296,7 +303,7 @@ test('a generation can be cancelled, and cancelling is not reported as a failure
     // Clearing mid-generation used to empty the transcript and then let the answer
     // append itself to the empty state.
     assert.match(fnBody('clearChat'), /stopAsk\(\)/, 'clearChat leaves the request running');
-    assert.match(src, /id="sendBtn"[^>]*onclick="onSendClick\(\)"/, 'the send button is not wired to the dispatcher');
+    assert.match(html, /id="sendBtn"[^>]*onclick="onSendClick\(\)"/, 'the send button is not wired to the dispatcher');
 });
 
 test('passage search results are reachable by keyboard', () => {
@@ -512,7 +519,7 @@ test('the theme button cycles system, light and dark, and only the choice is an 
 
     // In the header, not the sidebar: it has to be reachable without opening the
     // drawer, which on a phone is the only route into the sidebar.
-    const header = src.match(/<header>[\s\S]*?<\/header>/);
+    const header = html.match(/<header>[\s\S]*?<\/header>/);
     assert.ok(header, 'there is no <header>');
     assert.match(header[0], /id="themeBtn"/, 'the theme button is not in the header');
     assert.match(header[0], /onclick="cycleTheme\(\)"/, 'the theme button is not wired to the cycle');

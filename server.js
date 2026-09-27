@@ -11,7 +11,7 @@ import { documentsRouter } from './src/routes/documents.js';
 
 const app = express();
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const UI_FILE = path.join(ROOT, 'BIS_Assistant_frontend.html');
+const UI_DIR = path.join(ROOT, 'public');
 
 app.use(cors());
 app.use(express.json({ limit: '256kb' }));
@@ -21,10 +21,11 @@ app.use('/api', searchRouter);
 app.use('/api', healthRouter);
 app.use('/api', documentsRouter);
 
-// Serve the chat UI from the same origin as the API, so one `npm start` runs the
-// whole app. Registered before the 404 handler below, which would otherwise
-// swallow every non-/api request.
-app.get('/', (_req, res) => res.sendFile(UI_FILE));
+  // Serve the chat UI from the same origin as the API, so one `npm start` runs the
+  // whole app. public/ holds index.html, app.css, app.js and the four language
+  // tables, and `index` resolves / for us. Registered before the 404 handler
+  // below, which would otherwise swallow every non-/api request.
+  app.use(express.static(UI_DIR, { index: 'index.html' }));
 
 app.use((req, res) => {
   res.status(404).json({ error: `No such endpoint: ${req.method} ${req.path}` });

@@ -1,0 +1,653 @@
+    /* Flat, plain, document-first. No gradients, no shadows, no rounded pills,
+       no avatars, no animation. The things that were removed are listed at the
+       bottom of this block with the reason for each. */
+    :root {
+        /* Tells the browser to render native widgets -- scrollbars, form controls,
+           the PDF viewer's own chrome -- for whichever scheme is in force, instead
+           of a white scrollbar down the side of a dark page. */
+        color-scheme: light dark;
+        --ink: #1a1a1a;
+        --ink-soft: #555;
+        /* 6b6b6b, not 777: on white #777 measures 4.48:1, just under the 4.5:1 AA
+           floor, and this token carries the smallest text on the page (the 11px
+           sidebar labels, the language tag, the citation toggle, page numbers).
+           The least legible text was also the most numerous. #6b6b6b is 5.33:1
+           and looks the same weight. */
+        --ink-faint: #6b6b6b;
+        --rule: #d8d8d8;
+        --rule-soft: #ececec;
+        --page: #ffffff;
+        --panel: #fafafa;
+        --link: #12507d;
+        --warn: #8a5300;
+        --warn-bg: #fdf6e8;
+        --mark-bg: #fef3c7;
+        --mark-ink: #555;
+        --mark-edge: #fcd34d55;
+        --bubble: #f0f0f0;
+        --radius-sm: 8px;
+        --radius: 12px;
+        --radius-lg: 22px;
+        --shadow-1: rgba(0, 0, 0, 0.07);
+        --shadow-2: rgba(0, 0, 0, 0.13);
+    }
+
+    /* Every colour in this file is a token, and this block is the only thing that
+       has to change to support a second scheme. The pairings are computed, not
+       eyeballed, and ui-ux.test.js asserts all of them in both schemes.
+
+       Deliberately not pure black on pure white: #15171b is easier on a long
+       document than #000, and #e8e9e7 is easier than #fff. The blues and ambers
+       are lightened for a dark ground because the light-scheme values sit at
+       roughly 8:1 against white and would fall to about 2:1 here.
+
+       --rule and --rule-soft are hairlines and stay low-contrast on purpose; a
+       divider does not need to be readable, only present. */
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --page: #15171b;
+            --panel: #1d2024;
+            --ink: #e8e9e7;
+            --ink-soft: #b9bdc1;
+            --ink-faint: #9aa0a6;
+            --rule: #33383d;
+            --rule-soft: #262a2e;
+            --link: #7cb8e8;
+            --warn: #e0a64a;
+            --warn-bg: #2a2317;
+            --mark-bg: #4a3c14;
+            --mark-ink: #f2e3bd;
+            --mark-edge: #f2e3bd33;
+            --bubble: #2b2f34;
+            --radius-sm: 8px;
+            --radius: 12px;
+            --radius-lg: 22px;
+            --shadow-1: rgba(0, 0, 0, 0.45);
+            --shadow-2: rgba(0, 0, 0, 0.55);
+        }
+    }
+    /* ---- forced themes ----
+       The two palettes above, restated, because there is no way to express "use the
+       dark values" in CSS except a media query or a selector: color-scheme changes
+       what the UA paints, and a media query cannot see an attribute. So the button
+       writes data-theme onto <html> and these two blocks key off it.
+
+       The duplication is the price of the design, not an oversight, and it buys three
+       things:
+         - specificity settles it. :root is (0,1,0) and :root[data-theme] is (0,2,0),
+           so an explicit choice always beats the system without !important and
+           without depending on which block below happens to come first in the file;
+         - color-scheme is pinned per block, because that is the one thing no token
+           can carry: scrollbars, the search field and the PDF viewer have to follow
+           the scheme that was chosen, not the one the OS reports;
+         - nothing changes for anyone who never opens the button. The media query is
+           still the whole answer for them, on the first paint and every one after.
+
+       The hazard this creates is drift -- a colour edited in the base palette and
+       forgotten here renders stale the moment a choice is made, and nothing in the
+       browser complains. So ui-ux.test.js holds this pair to the same contrast list
+       as the pair above and diffs their token names and values against the originals.
+       Edit all three, or expect the suite to fail. */
+    :root[data-theme='light'] {
+        color-scheme: only light;
+        --ink: #1a1a1a;
+        --ink-soft: #555;
+        --ink-faint: #6b6b6b;
+        --rule: #d8d8d8;
+        --rule-soft: #ececec;
+        --page: #ffffff;
+        --panel: #fafafa;
+        --link: #12507d;
+        --warn: #8a5300;
+        --warn-bg: #fdf6e8;
+        --mark-bg: #fef3c7;
+        --mark-ink: #555;
+        --mark-edge: #fcd34d55;
+        --bubble: #f0f0f0;
+        --radius-sm: 8px;
+        --radius: 12px;
+        --radius-lg: 22px;
+        --shadow-1: rgba(0, 0, 0, 0.07);
+        --shadow-2: rgba(0, 0, 0, 0.13);
+    }
+
+    :root[data-theme='dark'] {
+        color-scheme: only dark;
+        --page: #15171b;
+        --panel: #1d2024;
+        --ink: #e8e9e7;
+        --ink-soft: #b9bdc1;
+        --ink-faint: #9aa0a6;
+        --rule: #33383d;
+        --rule-soft: #262a2e;
+        --link: #7cb8e8;
+        --warn: #e0a64a;
+        --warn-bg: #2a2317;
+        --mark-bg: #4a3c14;
+        --mark-ink: #f2e3bd;
+        --mark-edge: #f2e3bd33;
+        --bubble: #2b2f34;
+        --radius-sm: 8px;
+        --radius: 12px;
+        --radius-lg: 22px;
+        --shadow-1: rgba(0, 0, 0, 0.45);
+        --shadow-2: rgba(0, 0, 0, 0.55);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 15px;
+        line-height: 1.55;
+        color: var(--ink);
+        background: var(--page);
+        -webkit-font-smoothing: antialiased;
+    }
+
+    /* ---- header ---- */
+    header {
+        border-bottom: 1px solid var(--rule);
+        padding: 14px 20px;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+    header h1 {
+        font-size: 17px; font-weight: 600;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* Clamped to one line, and it has to be. This line used to carry every
+       document title in the corpus, joined with ", ", so the height of the header
+       was a function of the corpus: four rows on a desktop and eight on a phone,
+       from the five PDFs in data/pdfs. loadHealth puts counts here now and the
+       titles in the tooltip, and this is the backstop for the day a long
+       unbroken title is put back into it. `nowrap` rather than a soft wrap
+       because a header that grows pushes the whole transcript down the page. */
+    header .sub {
+        font-size: 13px; color: var(--ink-faint); margin-top: 2px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* min-width:0 on both, so the ellipsis above can actually take effect: a flex
+       item's default min-width is its content, and a titled header would push
+       .head-right off the window instead of truncating. */
+    .head-left { display: flex; align-items: center; gap: 10px; flex: 1 1 220px; min-width: 0; }
+    .head-title { min-width: 0; }
+    .head-right { display: flex; align-items: center; gap: 14px; flex: 0 1 auto; }
+    .runtime { font-size: 12px; color: var(--ink-faint); text-align: right; line-height: 1.4; }
+    /* Static, non-interactive hint. Deliberately not a <select>: there is nothing
+       to choose, because the language follows the question. */
+    .anylang {
+        font-size: 12px; color: var(--ink-faint); text-align: right;
+        margin-top: 2px; padding: 2px 8px; border: 1px solid var(--rule);
+        border-radius: 4px; white-space: nowrap;
+    }
+    /* The theme control. A glyph rather than the word "Dark", for two reasons: the
+       button has to name the mode it is in, and a cycling control makes that name
+       ambiguous either way (does the label say where you are, or where a press will
+       take you?), so the name lives in the title and the accessible label and the
+       glyph is the glanceable part. And a word would have to be written in four
+       scripts to sit where three glyphs will do.
+
+       The glyphs are three circles that differ only in fill -- empty, half, solid --
+       and not a sun and a moon. U+2600 takes emoji presentation on some platforms,
+       which would put the one orange glyph on the page and undo the flat,
+       document-first rule the rest of this block is written to; the geometric shapes
+       cannot. And fill survives a glance with no label, which "light" against "dark"
+       also does but a filled sun does not. Sized square so cycling cannot shift the
+       header. */
+    .theme-btn {
+        font: inherit; font-size: 15px; line-height: 1;
+        width: 30px; height: 30px; flex: 0 0 auto; padding: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        color: var(--ink-soft); background: var(--page);
+        border: 1px solid var(--rule); border-radius: 3px; cursor: pointer;
+    }
+    .theme-btn:hover { color: var(--ink); border-color: var(--ink-faint); }
+    select {
+        font: inherit; font-size: 13px; padding: 5px 8px;
+        border: 1px solid var(--rule); border-radius: 3px;
+        background: var(--page); color: var(--ink); cursor: pointer;
+    }
+    select:focus-visible, button:focus-visible, input:focus-visible, a:focus-visible {
+        outline: 2px solid var(--link); outline-offset: 1px;
+    }
+
+    /* ---- layout ---- */
+    .wrap { display: flex; align-items: flex-start; min-height: calc(100vh - 66px); }
+    aside {
+        width: 268px; flex-shrink: 0;
+        border-right: 1px solid var(--rule);
+        padding: 18px 16px;
+        position: sticky; top: 0; align-self: flex-start;
+        max-height: 100vh; overflow-y: auto;
+    }
+    /* The composer is fixed and the textarea grows to 190px, so the space
+       reserved for it is measured and published as --composer-h rather than
+       guessed: 120px was right for the old single-line field and would have let a
+       tall composer cover the last answer. See resizeComposer() in app.js. */
+    main { flex: 1; min-width: 0; padding: 20px 24px calc(var(--composer-h, 96px) + 20px); }
+
+    .side-h {
+        font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+        color: var(--ink-faint); font-weight: 600; margin-bottom: 8px;
+    }
+    .side-block { margin-bottom: 22px; }
+    .side-list { list-style: none; }
+    .side-list li { margin: 0 0 1px; }
+    /* The two regions that can grow without bound each scroll themselves, and
+       their order was changed to match. Both used to sit below a topic list of up
+       to 18 entries (suggestionCount 6 x 3, from /api/topics) inside the one
+       100vh scroller, so on a short window both the search box and Clear
+       transcript were scrolled out of sight -- and the search box is the main way
+       to reach a passage. Search first, topics second, the action last, and no
+       region can push another off the panel. The aside keeps its own
+       max-height/overflow as the backstop for the case where they add up anyway.
+
+       The caps are in vh rather than px so they follow the window: 40vh of result
+       cards is roughly four of the eight, and 34vh of topics is a dozen. */
+    #searchResults { margin-top: 8px; max-height: 40vh; overflow-y: auto; }
+    #topicList { max-height: 34vh; overflow-y: auto; }
+    .side-foot { border-top: 1px solid var(--rule-soft); padding-top: 14px; }
+    .side-btn {
+        display: block; width: 100%; text-align: left;
+        font: inherit; font-size: 13px; line-height: 1.4;
+        background: none; border: none; border-radius: 3px;
+        padding: 5px 7px; cursor: pointer; color: var(--link);
+    }
+    .side-btn:hover { background: var(--panel); text-decoration: underline; }
+    .side-btn .code { color: var(--ink-faint); }
+    .side-input {
+        width: 100%; font: inherit; font-size: 13px; padding: 6px 8px;
+        border: 1px solid var(--rule); border-radius: 3px; background: var(--page);
+    }
+    .plain-btn {
+        font: inherit; font-size: 13px; background: none; cursor: pointer;
+        border: 1px solid var(--rule); border-radius: 3px; padding: 5px 10px; color: var(--ink-soft);
+    }
+    .plain-btn:hover { border-color: var(--ink-faint); color: var(--ink); }
+    .side-note { font-size: 12px; color: var(--ink-faint); }
+    /* A result card is a <button>, so it carries the button resets the same way
+       .side-btn does: a button does not inherit font, centres its text, and sizes
+       to its content, none of which is wanted here. This is the difference between
+       a passage you can find with the keyboard and one you can only reach with a
+       mouse -- and the search results are the main way to find a passage. */
+    .dir-card {
+        display: block; width: 100%; text-align: left; font: inherit;
+        border: 1px solid var(--rule-soft); border-radius: 3px;
+        padding: 8px 9px; margin-bottom: 6px; cursor: pointer; background: var(--page);
+    }
+    .dir-card:hover { border-color: var(--ink-faint); }
+    /* A button's content model is phrasing content, so these are spans made block
+       by this rule rather than the divs they replaced. */
+    .dir-card .t { display: block; font-size: 13px; font-weight: 600; }
+    .dir-card .m { display: block; font-size: 11px; color: var(--ink-faint); margin: 1px 0 3px; }
+    .dir-card .p { display: block; font-size: 12px; color: var(--ink-soft); }
+
+    /* ---- transcript ---- */
+    /* 68ch on the turn, not on the answer. Uncapped, the transcript ran the full
+       width of the window -- roughly 1600px of line on a wide monitor, well past
+       the 60-80ch that is comfortable to read. Capping the turn rather than just
+       the prose means the question, the answer and the timing line share one
+       measure instead of the question spanning the window while the answer sat in
+       a narrow column. It also caps the rule between turns, which is the honest
+       version: a full-width divider above 68ch of text reads as though the page
+       were wider than the content.
+
+       Centred, and every direct child of main is centred with it. The column used
+       to sit hard against the sidebar, so a wide monitor had ~700px of dead space
+       to the right of the answer with nothing in it. Centring is what lets the
+       composer centre on the same axis: main's content box and the composer's are
+       both "268px to the right edge, less 24px of padding", so one measure and
+       auto margins on both put the Ask button beside the text instead of 700px
+       away from it.
+
+       68ch is a literal in both rules rather than a token, on purpose:
+       ui-ux.test.js reads the number out of this block to hold the measure inside
+       the 55-80ch band, and the composer's copy is the same literal so the two
+       cannot drift. Change one, change both. */
+    .turn {
+        padding: 18px 0 20px;
+        max-width: 68ch; margin-inline: auto;
+    }
+    /* The question is a bubble and the answer is not. The answer carries the
+       citations and the clause highlights, and a tint behind it competes with the
+       mark fill for the reader's eye -- so only the side that is "said" gets a
+       surface, and the side that is "sourced" stays on the page. */
+    .q {
+        display: inline-block; max-width: 100%;
+        font-weight: 600; font-size: 15px; line-height: 1.5;
+        background: var(--bubble); color: var(--ink);
+        border-radius: var(--radius); padding: 10px 14px;
+    }
+    /* break-word rather than anywhere for prose: anywhere can break inside an
+       ordinary word, and an answer contains IS numbers, clause references and the
+       occasional long token that should wrap but not shatter. */
+    .a { margin-top: 14px; overflow-wrap: break-word; }
+    .tag {
+        display: inline-block; font-size: 11px; font-weight: 400;
+        color: var(--ink-faint); border: 1px solid var(--rule);
+        border-radius: 3px; padding: 0 5px; margin-left: 8px; vertical-align: 2px;
+    }
+    .a p { margin: 0 0 9px; }
+    .a ul, .a ol { margin: 0 0 9px; padding-left: 20px; }
+    .a li { margin: 2px 0; }
+    .a h4 {
+        font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+        color: var(--ink-faint); margin: 12px 0 5px;
+    }
+    .a .cite { font-size: 11px; color: var(--link); }
+    /* `anywhere` here, matching the drawer, because these are the long document
+       titles ("SP 21 - Summaries of Indian Standards for Building Materials and
+       Construction") rather than prose. Unbroken, they forced the whole
+       transcript to scroll sideways on a narrow screen. */
+    .src {
+        font-size: 12px; color: var(--ink-soft); overflow-wrap: anywhere;
+        border-top: 1px solid var(--rule-soft); margin-top: 12px; padding-top: 8px;
+    }
+    .src ol { padding-left: 18px; }
+    .loc {
+        border-left: 2px solid var(--rule); padding: 2px 0 2px 11px; margin: 0 0 11px;
+    }
+    .ask-suggestion {
+        font: inherit; font-size: 13px; background: none; border: none;
+        padding: 0; color: var(--link); cursor: pointer; text-align: left;
+        text-decoration: underline;
+    }
+    .ask-suggestion:hover { text-decoration: none; }
+
+    /* Citation affordances. A page reference that cannot be opened is only
+       marginally better than no page reference, so the number is a real link
+       into the source PDF. Understated on purpose: it sits inside a citation
+       line that is already dense, and it should read as "this is checkable"
+       rather than as another button competing for attention. */
+    .cite-link {
+        color: var(--link); text-decoration: underline; text-underline-offset: 2px;
+        text-decoration-thickness: 1px; border-radius: 2px;
+    }
+    .cite-link:hover { text-decoration-thickness: 2px; }
+    .cite-link:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+    /* The passage text, revealed so a claim can be checked against what the
+       model actually read rather than taken on trust. */
+    .cite-panel { margin: 4px 0 2px; }
+    .cite-toggle {
+        font-size: 11px; color: var(--ink-faint); cursor: pointer;
+        list-style: none; display: inline-block; padding: 1px 0;
+        border-bottom: 1px dotted var(--rule);
+    }
+    .cite-toggle::-webkit-details-marker { display: none; }
+    .cite-toggle::before { content: '+ '; font-weight: 700; }
+    .cite-panel[open] > .cite-toggle::before { content: '− '; }
+    .cite-toggle:hover { color: var(--link); }
+    .cite-toggle:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+    .cite-excerpt {
+        margin: 5px 0 2px; padding: 7px 9px; border-left: 2px solid var(--rule-soft);
+        background: var(--panel); font-size: 12px; line-height: 1.55;
+        color: var(--ink-soft); white-space: pre-wrap; max-height: 340px;
+        overflow-y: auto; border-radius: 0 3px 3px 0;
+    }
+    /* The cited clause. Warm rather than the link blue, so a highlight in the
+       passage is never mistaken for a control.
+       --mark-ink is pinned rather than inherited: the fill is light in the
+       light scheme, so `color: inherit` would put light text on a light fill the
+       moment the page inverts. Both schemes are verified in ui-ux.test.js
+       (6.70:1 light, 8.47:1 dark). */
+    .cite-excerpt mark {
+        background: var(--mark-bg); color: var(--mark-ink); padding: 0 2px; border-radius: 2px;
+        font-weight: 600; box-shadow: 0 0 0 1px var(--mark-edge);
+    }
+
+    /* ---- in-page source viewer ----
+       A fixed overlay, not a column in .wrap. Sizing the transcript instead would
+       reflow every open and close, and the chat is long enough already. */
+    .cite-viewer { position: fixed; inset: 0; z-index: 40; }
+    /* Closed state is visibility, not display, so the panel can transition. The
+       panel is also inert (set by the script) to keep its links out of the tab
+       order while it is off screen. */
+    .cite-viewer { visibility: hidden; transition: visibility 0s linear .18s; }
+    .cite-viewer.open { visibility: visible; transition: visibility 0s; }
+
+    .cite-viewer-scrim {
+        position: absolute; inset: 0; background: color-mix(in srgb, var(--ink) 35%, transparent);
+        opacity: 0; transition: opacity .18s ease;
+    }
+    .cite-viewer.open .cite-viewer-scrim { opacity: 1; }
+
+    .cite-viewer-panel {
+        position: absolute; top: 0; right: 0; height: 100%;
+        width: min(520px, 100vw);
+        display: flex; flex-direction: column;
+        background: var(--page); border-left: 1px solid var(--rule);
+        box-shadow: -8px 0 24px color-mix(in srgb, var(--ink) 10%, transparent);
+        transform: translateX(100%); transition: transform .18s ease;
+    }
+    .cite-viewer.open .cite-viewer-panel { transform: translateX(0); }
+
+    .cite-viewer-head {
+        display: flex; align-items: flex-start; gap: 10px;
+        padding: 13px 14px 11px; border-bottom: 1px solid var(--rule-soft);
+    }
+    .cite-viewer-titles { flex: 1; min-width: 0; }
+    .cite-viewer-doc {
+        font-size: 13px; font-weight: 600; color: var(--ink);
+        /* Document titles are long; wrap rather than push the close button out. */
+        overflow-wrap: anywhere;
+    }
+    .cite-viewer-meta { font-size: 11px; color: var(--ink-faint); margin-top: 2px; }
+    .cite-viewer-x {
+        flex-shrink: 0; width: 26px; height: 26px; line-height: 1;
+        font-size: 19px; color: var(--ink-faint);
+        background: none; border: 1px solid transparent; border-radius: 3px;
+        cursor: pointer;
+    }
+    .cite-viewer-x:hover { color: var(--ink); background: var(--panel); border-color: var(--rule); }
+    .cite-viewer-x:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+
+    /* The passage, capped so the document keeps most of the panel. Scrolls. */
+    .cite-viewer-excerpt {
+        flex-shrink: 0; max-height: 26vh; overflow-y: auto;
+        padding: 11px 14px; border-bottom: 1px solid var(--rule-soft);
+        background: var(--panel); font-size: 12px; line-height: 1.55;
+        color: var(--ink-soft); white-space: pre-wrap;
+    }
+    .cite-viewer-excerpt mark {
+        background: var(--mark-bg); color: var(--mark-ink); padding: 0 2px; border-radius: 2px;
+        font-weight: 600; box-shadow: 0 0 0 1px var(--mark-edge);
+    }
+    .cite-viewer-frame { flex: 1; width: 100%; border: 0; background: var(--panel); }
+
+    .cite-viewer-foot {
+        flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+        padding: 8px 14px; border-top: 1px solid var(--rule-soft);
+        font-size: 11px; color: var(--ink-faint);
+    }
+    .cite-viewer-note { flex: 1; }
+    .cite-viewer-newtab { color: var(--link); white-space: nowrap; }
+
+    /* The sidebar is a drawer at this width and closed by default, so the viewer
+       takes the whole screen rather than sitting beside a panel the reader has to
+       dismiss before reading the passage. */
+    @media (max-width: 860px) {
+        .cite-viewer-panel { width: 100vw; }
+        .cite-viewer-excerpt { max-height: 30vh; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .cite-viewer, .cite-viewer-scrim, .cite-viewer-panel { transition: none; }
+        aside, .side-scrim { transition: none; }
+    }
+
+    .notice {
+        border: 1px solid color-mix(in srgb, var(--warn) 32%, var(--page)); background: var(--warn-bg); color: var(--warn);
+        padding: 12px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 12px;
+        box-shadow: var(--shadow-1);
+        /* The same measure and the same centring as a turn, so a failure is a band
+           across the reading column rather than a small box floating in the middle
+           of a wide one. */
+        max-width: 68ch; margin-inline: auto;
+    }
+    .thinking { color: var(--ink-faint); font-size: 14px; }
+
+    /* ---- composer ---- */
+    .composer {
+        position: fixed; left: 268px; right: 0; bottom: 0;
+        border-top: 1px solid var(--rule); background: var(--page); padding: 12px 24px;
+    }
+    /* Capped and centred to the reading column, matching .turn. Uncapped, the
+       input ran the full width of the window and put the Ask button out in the
+       empty space to the right of the answer, which is also where the eye is not.
+       Same 68ch literal, same reason it is a literal. */
+    .composer .inner {
+        display: flex; gap: 8px; max-width: 68ch; margin-inline: auto;
+        border: 1px solid var(--rule); border-radius: var(--radius-lg);
+        background: var(--page); box-shadow: var(--shadow-2);
+        padding: 5px 5px 5px 14px; align-items: flex-end;
+    }
+    .composer textarea {
+        flex: 1; font: inherit; line-height: 1.5; padding: 8px 0; margin: 0;
+        border: 0; background: transparent; resize: none;
+        max-height: 190px; overflow-y: auto; min-width: 0;
+    }
+    .composer textarea:focus { outline: none; }
+    /* ...and the ring moves to the box instead of disappearing. A borderless field
+       with outline:none and no replacement is a keyboard user with no idea where
+       they are typing, so focus-within on the wrapper is what carries it -- which
+       is also the honest target, since the visible control is the whole box. */
+    .composer .inner:focus-within {
+        border-color: var(--link);
+        box-shadow: var(--shadow-2), 0 0 0 3px color-mix(in srgb, var(--link) 20%, transparent);
+    }
+    .composer button {
+        font: inherit; font-size: 14px; padding: 9px 18px; cursor: pointer; flex: none;
+        background: var(--ink); color: var(--page); border: 1px solid var(--ink);
+        border-radius: 999px;
+    }
+    .composer button:disabled { opacity: .55; cursor: default; }
+
+    .intro { color: var(--ink-soft); }
+
+    /* ---- the index drawer ----
+       Everything in this block is off above 860px, where the sidebar is a column
+       in the layout and needs no trigger. Below it, the sidebar is an overlay
+       rather than a column: it is the only route to passage search and to the
+       topic list, and `aside { display: none }` at this width made two features
+       simply not exist on the device people read a standards answer on. Same
+       contract as the citation viewer above, deliberately: the same scrim, the
+       same closed state as visibility rather than display so the panel can
+       transition and stays out of the tab order while it is off screen, the same
+       reduced-motion opt-out. */
+    .side-toggle, .side-top, .side-scrim { display: none; }
+    .side-toggle {
+        font: inherit; font-size: 13px; background: none; cursor: pointer;
+        border: 1px solid var(--rule); border-radius: 3px; padding: 6px 10px;
+        color: var(--ink-soft); white-space: nowrap; flex-shrink: 0;
+    }
+    .side-toggle:hover { border-color: var(--ink-faint); color: var(--ink); }
+    .side-x {
+        width: 32px; height: 32px; line-height: 1; font-size: 19px;
+        color: var(--ink-faint); background: none; cursor: pointer;
+        border: 1px solid var(--rule); border-radius: 3px;
+    }
+    .side-x:hover { color: var(--ink); background: var(--panel); }
+    .side-x:focus-visible, .side-toggle:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+
+    @media (max-width: 860px) {
+        .side-toggle { display: inline-flex; align-items: center; }
+        /* The drawer's own close control. A scrim tap is the other route and
+           Escape the third, but a scrim is not a control a first-time user looks
+           for, and Escape does not exist on a phone at all. */
+        .side-top { display: flex; justify-content: flex-end; margin: -4px 0 8px; }
+
+        .side-scrim {
+            display: block; position: fixed; inset: 0; z-index: 45;
+            background: color-mix(in srgb, var(--ink) 35%, transparent);
+            opacity: 0; visibility: hidden;
+            transition: opacity .18s ease, visibility 0s linear .18s;
+        }
+        .side-scrim.on { opacity: 1; visibility: visible; transition: opacity .18s ease; }
+
+        /* Above the scrim, and above the citation viewer, so the two cannot end
+           up in a stack that looks broken. They cannot actually be open at once
+           in any case: each makes the other's trigger inert while it is up, and
+           the drawer marks the transcript inert too. */
+        aside {
+            position: fixed; top: 0; bottom: 0; left: 0; z-index: 46;
+            width: min(300px, 86vw); max-height: none; overflow-y: auto;
+            background: var(--page);
+            box-shadow: 6px 0 24px color-mix(in srgb, var(--ink) 10%, transparent);
+            transform: translateX(-100%); visibility: hidden;
+            transition: transform .18s ease, visibility 0s linear .18s;
+        }
+        aside.open {
+            transform: translateX(0); visibility: visible;
+            transition: transform .18s ease;
+        }
+
+        /* 44px is the smallest box a finger reliably hits. The send button was
+           36px and a sidebar row 30px, which on a phone is a miss often enough to
+           be worth the extra row height. */
+        .composer button { padding: 11px 20px; }
+        .composer textarea { padding: 11px 0; }
+        .side-btn { padding: 9px 7px; }
+        .dir-card { padding: 10px; }
+        .plain-btn { padding: 9px 12px; }
+        /* The theme control is the only button in the header, and 30px is a miss on
+           a phone. It grows here rather than the header getting taller, because it
+           is already as tall as the two text lines beside it. */
+        .theme-btn { width: 44px; height: 44px; }
+
+        .composer { left: 0; }
+        main { padding: 16px 16px calc(var(--composer-h, 96px) + 20px); }
+    }
+
+    /* Removed, and why:
+       - .msg-icon circular "AI" avatar badges on every message — the single
+         clearest sign of a chat template; a transcript needs no portrait.
+       - blinking scaling typing dots; replaced by one plain "Thinking…" line.
+       - glowing green "Systems Active" dot with a box-shadow bloom.
+       - navy sidebar, per-item SVG icons, and a fade-up animation on each message.
+       - the camera and mic buttons. Their handlers, handleImageUpload and
+         startDictation, were never defined anywhere in the file, so both threw a
+         ReferenceError on click. There is no OCR or speech path behind them: a
+          camera would need a vision model this machine cannot fit alongside the
+          generator, and the browser speech API used by the mic would stream audio
+          to a cloud service, which contradicts running fully locally.
+       - `chatBox.scrollTop = chatBox.scrollHeight`, in three places. The transcript
+          has no height of its own, so the document scrolls and main cannot be
+          scrolled programmatically: every one of those assignments was a no-op. A
+          turn reached the viewport only because it also called scrollIntoView, and
+          notice() did not, which is why an error could render below the fold.
+       - `.intro ul` and `.intro li`, which styled a bulleted list in the empty
+          state. emptyState is a single sentence and has never contained a list, so
+          nothing could select those two rules.
+       - the send button's `disabled` state during a generation. It was a dead end
+          -- a local model can take tens of seconds and there was no way to stop it.
+          The button is Stop now, and `inflight` is what guards a second Enter.
+       - `aside { display: none }` below 860px. It made the sidebar the one part
+         of the interface that did not exist on a phone, and the sidebar is the
+         only route to passage search and to the topic list -- the same two
+         features a hardcoded sidebar was rebuilt around. It is an overlay at that
+         width now, on the citation viewer's terms. See "the index drawer".
+
+       Restored, and why -- the pill-shaped composer and the soft shadows and
+       16px+ radii came off this list on the same day the rest of the template
+       did, and that was over-correction. Rejected as a *template tell* is not the
+       same as rejected as a *shape*, and these three were carrying the template's
+       visual signature while doing nothing for its function: a raised composer
+       reads as one control instead of a field with a button parked beside it, and
+       a radius tells the eye where one surface ends before a hairline has to.
+       So the shapes came back as tokens (--radius, --radius-lg, --shadow-1,
+       --shadow-2, --bubble), declared in all four palette blocks and measured
+       like any other colour, and the *tells* stayed away: no avatars, no typing
+       animation, no navy sidebar. A question is a --bubble block and the answer
+       is not, because the answer carries the citations and the clause highlight
+       and a tint behind it competes with the mark fill for the eye.
+
+       Still not coming back, deliberately:
+       - a circular send button that scaled on hover. The button keeps its Ask /
+         Stop *text*, because setSendLabel() writes it from the i18n table and
+         applyLanguage() rewrites it when the server answers in another language.
+         An icon-only button would be wiped by the first of those and the second
+         would have nothing to rewrite -- and four languages would need a glyph
+         that means "send" in all of them. The text is also the accessible name. */
+

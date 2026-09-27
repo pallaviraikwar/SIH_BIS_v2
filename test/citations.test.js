@@ -5,7 +5,10 @@ import { readFileSync } from 'node:fs';
 import { renderSourcesHtml, renderNearMissHtml, renderLocatedHtml, pageLink, citationPanel, escapeHtml } from '../src/render.js';
 import { config } from '../src/config.js';
 
-const UI_FILE = new URL('../BIS_Assistant_frontend.html', import.meta.url);
+// The behaviour and the markup are separate files now, and the viewer tests need
+// both: an id has to be *read* by app.js and *present* in index.html.
+const UI_SCRIPT = new URL('../public/app.js', import.meta.url);
+const UI_MARKUP = new URL('../public/index.html', import.meta.url);
 
 /**
  * Verifiable citations.
@@ -173,10 +176,10 @@ test('the marked span is the real clause, not a shifted one', () => {
 /* Pull a function out of the frontend and make it callable, rather than copying it
  * here. A copy would keep passing after the real one changed, which is the failure
  * this section exists to prevent, so a missing or renamed function has to fail. */
-const UI_SOURCE = readFileSync(UI_FILE, 'utf8');
+const UI_SOURCE = readFileSync(UI_SCRIPT, 'utf8');
 function clientFn(name, deps = {}) {
   const decl = UI_SOURCE.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`));
-  assert.ok(decl, `${name}() must exist in BIS_Assistant_frontend.html`);
+  assert.ok(decl, `${name}() must exist in public/app.js`);
   // deps are passed by name: new Function takes parameter names, not values.
   const names = Object.keys(deps);
   return new Function(...names, `return (${decl[0]});`)(...names.map((k) => deps[k]));
@@ -557,7 +560,7 @@ test('the citable list only offers documents that can be opened', async () => {
 test('the source viewer ships closed and out of the tab order', () => {
   // Without these the panel is focusable while off screen, so a keyboard user
   // tabs into a PDF frame that is not visible.
-  const html = readFileSync(UI_FILE, 'utf8');
+  const html = readFileSync(UI_MARKUP, 'utf8');
   const tag = html.match(/<div class="cite-viewer" id="citeViewer"[^>]*>/);
   assert.ok(tag, 'the viewer container is missing');
   assert.match(tag[0], /aria-hidden="true"/);
@@ -567,7 +570,7 @@ test('the source viewer ships closed and out of the tab order', () => {
 test('the viewer frame has no src until a citation is opened', () => {
   // A src here would fetch a 7.5 MB PDF on every page load, before anyone had
   // asked to see a source.
-  const html = readFileSync(UI_FILE, 'utf8');
+  const html = readFileSync(UI_MARKUP, 'utf8');
   const frame = html.match(/<iframe[^>]*id="citeViewerFrame"[^>]*>/);
   assert.ok(frame, 'the viewer frame is missing');
   assert.ok(!/\ssrc=/.test(frame[0]), `the frame must not carry a src: ${frame[0]}`);
@@ -576,8 +579,9 @@ test('the viewer frame has no src until a citation is opened', () => {
 test('every element the viewer script looks up exists in the page', () => {
   // getElementById returns null for a typo, and the failure mode is a click that
   // silently does nothing.
-  const html = readFileSync(UI_FILE, 'utf8');
-  const wanted = [...html.matchAll(/getElementById\('(cite[A-Za-z]+)'\)/g)].map((m) => m[1]);
+  const js = readFileSync(UI_SCRIPT, 'utf8');
+  const html = readFileSync(UI_MARKUP, 'utf8');
+  const wanted = [...js.matchAll(/getElementById\('(cite[A-Za-z]+)'\)/g)].map((m) => m[1]);
   assert.ok(wanted.length >= 6, `only found ${wanted.length} viewer lookups; extraction is broken`);
   for (const id of new Set(wanted)) {
     assert.ok(html.includes(`id="${id}"`), `the script reads #${id} but the page has no such element`);
@@ -587,17 +591,18 @@ test('every element the viewer script looks up exists in the page', () => {
 test('the viewer can always be dismissed', () => {
   // Three routes out: the scrim, the button, Escape. A panel you can only close
   // by reloading is a trap on a touch device, where Escape does not exist.
-  const html = readFileSync(UI_FILE, 'utf8');
+  const html = readFileSync(UI_MARKUP, 'utf8');
+  const js = readFileSync(UI_SCRIPT, 'utf8');
   assert.ok(/class="cite-viewer-scrim"[^>]*data-cite-close/.test(html), 'the scrim does not close the viewer');
   assert.ok(/class="cite-viewer-x"[^>]*data-cite-close/.test(html), 'the close button is not wired');
-  assert.match(html, /e\.key === 'Escape'/, 'Escape does not close the viewer');
+  assert.match(js, /e\.key === 'Escape'/, 'Escape does not close the viewer');
 });
 
 test('the viewer offers a way out of the frame', () => {
   // #page= seeking inside a frame is unverified in Safari. The passage above the
   // frame is the primary evidence, and this link is the fallback when the frame
   // opens on the wrong page.
-  const html = readFileSync(UI_FILE, 'utf8');
+  const html = readFileSync(UI_MARKUP, 'utf8');
   const link = html.match(/<a[^>]*id="citeViewerNewTab"[^>]*>/);
   assert.ok(link, 'the fallback link is missing');
   assert.match(link[0], /target="_blank"/);

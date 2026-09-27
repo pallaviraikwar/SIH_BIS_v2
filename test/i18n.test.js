@@ -28,7 +28,28 @@ import {
 
 const LANGS = SUPPORTED_LANGS;
 
-const UI_FILE = new URL('../BIS_Assistant_frontend.html', import.meta.url);
+const I18N_SRC = new URL('../public/app-i18n.js', import.meta.url);
+const UI_MARKUP = new URL('../public/index.html', import.meta.url);
+const UI_SCRIPT = new URL('../public/app.js', import.meta.url);
+const UI_CSS = new URL('../public/app.css', import.meta.url);
+
+/**
+ * app-i18n.js is `window.I18N = { ... }` with every key quoted, so the object
+ * literal is also valid JSON. The assignment is stripped rather than eval'd, so
+ * these tests stay a parse of data and never execute the module they inspect.
+ */
+const I18N = JSON.parse(
+  readFileSync(I18N_SRC, 'utf8')
+    .replace(/^[\s\S]*?window\.I18N\s*=\s*/, '')
+    .replace(/;\s*$/, '')
+);
+
+// The UI was one file; a few tests scan it end to end for a removed feature. They
+// scan all three files now, or a name could be reintroduced in the stylesheet --
+// which is exactly where the camera and mic are still written about.
+const ALL_UI = [UI_MARKUP, UI_SCRIPT, UI_CSS]
+  .map((u) => readFileSync(u, 'utf8'))
+  .join('\n');
 
 test('every user-visible message table covers all four languages', () => {
   // A refusal once existed as one English constant plus a second hardcoded English
@@ -211,21 +232,17 @@ test('sources state only pipeline facts', () => {
  * Frontend string parity
  * ------------------------------------------------------------------ */
 
-test('the frontend ships the same string keys in all four languages', () => {
-  // These live in <script type="application/json"> blocks precisely so this check
-  // is possible. A missing key renders as the literal string "undefined" next to
-  // a real label, which is how a partially-translated UI ships unnoticed.
-  const html = readFileSync(UI_FILE, 'utf8');
-  const tables = {};
+  test('the frontend ships the same string keys in all four languages', () => {
+    // These live in app-i18n.js, quoted and parseable as JSON, precisely so this
+    // check is possible. A missing key renders as the literal string "undefined"
+    // next to a real label, which is how a partially-translated UI ships unnoticed.
+    const all = I18N;
+    const tables = {};
 
-  for (const lang of LANGS) {
-    const re = new RegExp(
-      `<script type="application/json" id="i18n-${lang}">([\\s\\S]*?)</script>`
-    );
-    const m = html.match(re);
-    assert.ok(m, `the frontend has no string table for "${lang}"`);
-    tables[lang] = JSON.parse(m[1]);
-  }
+    for (const lang of LANGS) {
+      assert.ok(all[lang], `the frontend has no string table for "${lang}"`);
+      tables[lang] = all[lang];
+    }
 
   const reference = Object.keys(tables.en).sort();
   assert.ok(reference.length > 15, `only ${reference.length} UI strings found; extraction is broken`);
@@ -239,13 +256,10 @@ test('the frontend ships the same string keys in all four languages', () => {
   }
 });
 
-test('no frontend string is left as an unfilled placeholder', () => {
-  const html = readFileSync(UI_FILE, 'utf8');
-  for (const lang of LANGS) {
-    const m = html.match(
-      new RegExp(`<script type="application/json" id="i18n-${lang}">([\\s\\S]*?)</script>`)
-    );
-    const table = JSON.parse(m[1]);
+  test('no frontend string is left as an unfilled placeholder', () => {
+    for (const lang of LANGS) {
+      const table = I18N[lang];
+      assert.ok(table, `the frontend has no string table for "${lang}"`);
     for (const [key, value] of Object.entries(table)) {
       const placeholders = [...value.matchAll(/\{(\w+)\}/g)].map((x) => x[1]);
       for (const p of placeholders) {
@@ -259,12 +273,15 @@ test('no frontend string is left as an unfilled placeholder', () => {
 test('the composer has no dead controls', () => {
   // handleImageUpload and startDictation were wired to the camera and mic buttons
   // but defined nowhere in the file, so both threw a ReferenceError on click.
-  const html = readFileSync(UI_FILE, 'utf8');
+  // The handlers live in the markup and the functions in the script, so this has
+  // to compare across both files to mean anything.
+  const html = readFileSync(UI_MARKUP, 'utf8');
+  const js = readFileSync(UI_SCRIPT, 'utf8');
   const called = [...html.matchAll(/on(?:click|change|input)="([a-zA-Z_$][\w$]*)\(/g)].map(
     (m) => m[1]
   );
   const defined = new Set(
-    [...html.matchAll(/function\s+([a-zA-Z_$][\w$]*)\s*\(/g)].map((m) => m[1])
+    [...js.matchAll(/function\s+([a-zA-Z_$][\w$]*)\s*\(/g)].map((m) => m[1])
   );
   for (const fn of called) {
     assert.ok(defined.has(fn), `"${fn}" is wired to the UI but never defined`);
@@ -275,7 +292,8 @@ test('the frontend offers no UI that the API cannot serve', () => {
   // The old sidebar linked certification, laboratories and hallmarking. All three
   // scored 0.617-0.665 against the real corpus, below the answer threshold, so
   // every one of them produced a guaranteed refusal.
-  const html = readFileSync(UI_FILE, 'utf8');
+  const html = readFileSync(UI_MARKUP, 'utf8');
+  const js = readFileSync(UI_SCRIPT, 'utf8');
 
   // Match real usages, not prose. The stylesheet explains at the bottom why the
   // camera and mic went away and names them there, so a bare substring scan would
@@ -283,12 +301,12 @@ test('the frontend offers no UI that the API cannot serve', () => {
   const wired = new RegExp(
     `(?:on(?:click|change|input)="|function\\s+)(${['startDictation', 'handleImageUpload'].join('|')})\\b`
   );
-  assert.ok(!wired.test(html), 'a removed control is still wired up');
+  assert.ok(!wired.test(ALL_UI), 'a removed control is still wired up');
 
   // Nor is there leftover markup for them to live in.
   assert.ok(!/id="(?:micBtn|cameraBtn|cameraInput|micInput)"/.test(html), 'dead control markup remains');
 
   // The topics list is fetched from the index rather than hardcoded.
-  assert.ok(html.includes('/api/topics'), 'the sidebar does not read topics from the index');
-  assert.ok(!/hallmark/i.test(html), 'the frontend still advertises a subject the corpus lacks');
+  assert.ok(js.includes('/api/topics'), 'the sidebar does not read topics from the index');
+  assert.ok(!/hallmark/i.test(ALL_UI), 'the frontend still advertises a subject the corpus lacks');
 });
