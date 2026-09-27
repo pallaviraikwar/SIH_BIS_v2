@@ -2,18 +2,24 @@
 #
 # One-command setup and launch for the BIS RAG assistant.
 #
-#   ./run.sh              preflight, build, start, wait, ingest if empty, verify
+#   ./run.sh              preflight, build, start, wait, load the corpus, verify
 #   ./run.sh --status     what is running. Changes nothing.
 #   ./run.sh --stop       stop the stack, keep the data
-#   ./run.sh --reset      stop it and delete the database and the model weights
+#   ./run.sh --reset      stop it and delete the database volume
 #   ./run.sh --help       everything else
 #
 # Why this exists: `docker compose up -d` returns as soon as the containers are
-# *created*, not when they are usable. Postgres is still running initdb, Ollama is
-# still loading, and the model pull is still 400 MB from done. It exits 0 the whole
-# time, so the usual "up -d && curl" is a race that fails on a cold machine and
-# works on a warm one, which is the worst kind of bug to hand someone. This waits
-# for each service to report a real state before moving on.
+# *created*, not when they are usable. Postgres is still running initdb and the app
+# is still migrating. It exits 0 the whole time, so the usual "up -d && curl" is a
+# race that fails on a cold machine and works on a warm one, which is the worst
+# kind of bug to hand someone. This waits for each service to report a real state
+# before moving on.
+#
+# Ollama runs on the host, not in a container, and that is deliberate. Model weights
+# are 4.6 GB; keeping them in a named volume that Compose can prune means losing
+# them to a stray `docker compose down -v`, and it means every new machine
+# re-downloads models it may already have. The host already has them, so the
+# container reaches out to the host instead.
 #
 # Linux, macOS and WSL only. See "On Windows" in README.md.
 
@@ -45,9 +51,20 @@ die()  { printf '\n%serror:%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
 # whose output shape has changed across Compose versions and would silently break.
 
 C_PGVECTOR=bis-pgvector
-C_OLLAMA=bis-ollama
-C_MODELS=bis-ollama-models
 C_APP=bis-app
+
+# Where the host's Ollama listens, and the address the container uses to reach it.
+# These must match docker-compose.yml. host.docker.internal maps to the host
+# gateway via extra_hosts, which is why a loopback-bound Ollama still cannot be
+# reached and has to be rebound to 0.0.0.0 (scripts/ollama-host-setup.sh).
+OLLAMA_HOST_PORT=11434
+OLLAMA_CONTAINER_URL="http://host.docker.internal:${OLLAMA_HOST_PORT}"
+OLLAMA_LOCAL_URL="http://127.0.0.1:${OLLAMA_HOST_PORT}"
+OLLAMA_SETUP_SCRIPT="scripts/ollama-host-setup.sh"
+
+# Must match the filenames in src/snapshot.js.
+LATEST_FILE=LATEST
+MANIFEST_FILE=manifest.json
 
 # docker-compose.yml line ~141 uses `env_file: required: false`, which does not
 # exist before Compose 2.24.0. Checking for "v2" would pass the preflight and then
@@ -65,22 +82,34 @@ ACTION=up
 FORCE_INGEST=0
 SKIP_INGEST=0
 SMOKE=0
+# Snapshot handling. Default is: use a snapshot if there is a compatible one and
+# the corpus is empty. SNAPSHOT_MODE is 'auto', 'never' or 'only'.
+SNAPSHOT_MODE=auto
 
 usage() {
   cat <<'EOF'
 Usage: ./run.sh [options]
 
-  (no options)      preflight, build, start, wait for ready, ingest if the
-                    corpus is empty, then print the health report
+  (no options)      preflight, build, start, wait for ready, load the corpus,
+                    then print the health report
   --status          print what is running and the health report; change nothing
-  --logs            follow the app and ollama logs (Ctrl-C to stop)
-  --stop            stop the stack, keep the database and models
-  --reset           stop it and DELETE the database and the model weights
+  --logs            follow the app logs (Ctrl-C to stop)
+  --stop            stop the stack, keep the database
+  --reset           stop it and DELETE the database volume
   --smoke           also ask one real question end to end, and show the answer
   --force-ingest    re-embed even though the corpus already has chunks
   --skip-ingest     bring the stack up and stop there
+  --import-snapshot only load a prepared index; never fall back to ingest
+  --no-snapshot     ignore index-snapshots/ and ingest from the PDFs
   --timeout N       seconds to wait for services to become ready (default 1800)
   -h, --help        this text
+
+Loading the corpus
+  An empty store is filled from index-snapshots/ if a compatible bundle is there,
+  which takes seconds, and from the PDFs in data/pdfs/ otherwise, which takes
+  minutes. The import refuses a bundle whose embedding model does not match
+  .env, then falls back to ingest, so an incompatible bundle is a slower start
+  rather than a failed one.
 
 Linux, macOS and WSL. On Windows, run this from PowerShell as:
   wsl -d Ubuntu -- bash -lc "cd <wsl-path>/SIH_BIS_v2 && ./run.sh"
@@ -95,6 +124,8 @@ while [[ $# -gt 0 ]]; do
     --reset)       ACTION=reset ;;
     --help|-h)     usage; exit 0 ;;
     --smoke)       SMOKE=1 ;;
+    --import-snapshot) SNAPSHOT_MODE=only ;;
+    --no-snapshot) SNAPSHOT_MODE=never ;;
     --force-ingest) FORCE_INGEST=1 ;;
     --skip-ingest) SKIP_INGEST=1 ;;
     --timeout)
@@ -166,9 +197,9 @@ resolve_docker() {
 # the python v1 is rejected, it does not understand this compose file at all).
 resolve_compose() {
   local ver major minor rest
-  if docker compose version --short >/dev/null 2>&1; then
-    DC+=(--compose-version-check)
-  fi
+  # Note: do not append any global flag to DC here. DC may be `sudo docker`, and
+  # a stray flag makes every later "docker ..." call fail, which then gets
+  # reported as "no working Docker Compose found" and blamed on the compose file.
   if "${DC[@]}" compose version --short >/dev/null 2>&1; then
     ver="$("${DC[@]}" compose version --short 2>/dev/null | tr -d '[:space:]')"
     check_compose_version "$ver" "docker compose"
@@ -258,29 +289,6 @@ wait_healthy() {
   done
 }
 
-# The models container is one-shot by design: it pulls three models and exits 0.
-wait_completed() {
-  local name="$1" label="$2" deadline=$((SECONDS + WAIT_TIMEOUT)) last="" state ec
-  while :; do
-    state="$(container_state "$name")"
-    ec="$(container_exit_code "$name")"
-    if [[ "$state" != "$last" ]]; then
-      printf '  %-18s %s (exit %s)\n' "$label" "$state" "$ec"
-      last="$state"
-    fi
-    if [[ "$state" == "exited" || "$state" == "completed" ]]; then
-      if [[ "$ec" == "0" ]]; then return 0; else return 1; fi
-    fi
-    if [[ "$state" == "missing" ]]; then
-      if (( SECONDS >= deadline )); then return 2; fi
-    elif (( SECONDS >= deadline )); then
-      printf '  %-18s still %s after %ss\n' "$label" "$state" "$WAIT_TIMEOUT"
-      return 2
-    fi
-    sleep "$POLL_SECONDS"
-  done
-}
-
 show_logs() {
   local service="$1" lines="${2:-30}"
   printf '  %slast %s lines of %s:%s\n' "$C_DIM" "$lines" "$service" "$C_RESET"
@@ -312,6 +320,154 @@ health_field() {
     | sed 's/.*:[[:space:]]*//' | tr -d '"' || true
 }
 
+# Is the host's Ollama answering, and can a container reach it?
+#
+# These are two different questions and both matter. The first is whether the model
+# server exists; the second is whether it is bound somewhere a container can see.
+# A loopback-only Ollama answers the first and fails the second, which is the whole
+# reason scripts/ollama-host-setup.sh exists.
+ollama_local_ready() {
+  curl -s -m 5 "${OLLAMA_LOCAL_URL}/api/tags" 2>/dev/null | grep -q '"name"' || return 1
+}
+
+ollama_reachable_from_container() {
+  local out
+  # Runs inside a container, so this is the only test that reflects what the app
+  # will actually experience.
+  out="$(compose run --rm --no-deps -T app node -e "
+    fetch(process.env.OLLAMA_BASE_URL + '/api/tags')
+      .then(r => r.ok ? r.text() : Promise.reject(new Error('HTTP ' + r.status)))
+      .then(t => { process.stdout.write(t.includes('models') ? 'ok' : 'empty'); })
+      .catch(() => process.stdout.write('fail'));
+  " 2>/dev/null | tr -d '[:space:]' || true)"
+  case "$out" in
+    ok|empty) return 0 ;;
+    *)        return 1 ;;
+  esac
+}
+
+# What Ollama models this project needs, matching scripts/ollama-host-setup.sh.
+REQUIRED_MODELS=(
+  "nomic-embed-text"
+  "mashriram/sarvam-1"
+  "MedAIBase/Tencent-HY-MT1.5:1.8b-q4_K_M"
+)
+
+check_ollama() {
+  step "Checking Ollama on the host"
+
+  if ! ollama_local_ready; then
+    warn "no Ollama answering on ${OLLAMA_LOCAL_URL}."
+    dim "This app runs its models on the host rather than in a container."
+    if [[ -x "$OLLAMA_SETUP_SCRIPT" ]]; then
+      dim "Install it and the three models this project needs:"
+      dim "    ./${OLLAMA_SETUP_SCRIPT}"
+    else
+      dim "See README.md, section 'Models on the host'."
+    fi
+    die "start Ollama first, then re-run. Nothing here can answer a question without it."
+  fi
+  ok "ollama is running"
+
+  local tags missing=()
+  tags="$(curl -s -m 10 "${OLLAMA_LOCAL_URL}/api/tags" 2>/dev/null || true)"
+  for model in "${REQUIRED_MODELS[@]}"; do
+    if ! printf '%s' "$tags" | grep -q ""${model%%:*}""; then
+      missing+=("$model")
+    fi
+  done
+  if (( ${#missing[@]} )); then
+    warn "${#missing[@]} required model(s) not pulled: ${missing[*]}"
+    if [[ -x "$OLLAMA_SETUP_SCRIPT" ]]; then
+      dim "    ./${OLLAMA_SETUP_SCRIPT}    # pulls what is missing"
+    fi
+    dim "The app will start but retrieval and generation will fail until they are there."
+  else
+    ok "all ${#REQUIRED_MODELS[@]} required model(s) present"
+  fi
+
+  if ollama_reachable_from_container; then
+    ok "the container can reach it at ${OLLAMA_CONTAINER_URL}"
+  else
+    warn "the container cannot reach Ollama at ${OLLAMA_CONTAINER_URL}."
+    dim "Usually means Ollama is bound to 127.0.0.1 only, so there is no interface"
+    dim "for the container to connect to. Rebind it:"
+    if [[ -x "$OLLAMA_SETUP_SCRIPT" ]]; then
+      dim "    ./${OLLAMA_SETUP_SCRIPT}"
+    fi
+    dim "That also exposes Ollama to your network, which it does not authenticate."
+    die "fix the binding, or point OLLAMA_BASE_URL somewhere the container can reach."
+  fi
+}
+
+# Locate a bundle in index-snapshots/.
+#
+#   0  prints the path, a bundle was found
+#   1  there is genuinely no bundle here
+#   2  a LATEST file exists but is unusable — a mistake, not an absence
+#
+# The three are kept apart deliberately. Treating a broken pointer as "no pointer"
+# means quietly loading whichever directory happens to be the only one there, which
+# is the opposite of what the file said and gives no sign anything was wrong.
+snapshot_dir() {
+  local root="${1:-index-snapshots}" pointer=""
+
+  if [[ -f "$root/$LATEST_FILE" ]]; then
+    pointer="$(tr -d '[:space:]' < "$root/$LATEST_FILE" || true)"
+    if [[ -z "$pointer" ]]; then
+      return 2
+    fi
+    # A pointer is one directory name. Anything with a path separator is refused
+    # rather than resolved, so a doctored pointer cannot aim the importer outside
+    # the mounted folder.
+    if [[ "$pointer" == */* || "$pointer" == *\\* || "$pointer" == ".." ]]; then
+      return 2
+    fi
+    if [[ ! -f "$root/$pointer/$MANIFEST_FILE" ]]; then
+      return 2
+    fi
+    printf '%s/%s' "$root" "$pointer"
+    return 0
+  fi
+
+  # No LATEST at all. A single bundle is still unambiguous, so use it.
+  local found=()
+  shopt -s nullglob
+  found=("$root"/*/"$MANIFEST_FILE")
+  shopt -u nullglob
+  if (( ${#found[@]} == 1 )); then
+    printf '%s' "${found[0]%/$MANIFEST_FILE}"
+    return 0
+  fi
+  return 1
+}
+
+# Turn a snapshot_dir status of 2 into an explanation, then carry on with 1.
+snapshot_or_explain() {
+  local root="${1:-index-snapshots}" snap
+  set +e
+  snap="$(snapshot_dir "$root")"
+  local rc=$?
+  set -e
+  case "$rc" in
+    0) printf '%s' "$snap"; return 0 ;;
+    2)
+      warn "$root/$LATEST_FILE is present but unusable."
+      if [[ -s "$root/$LATEST_FILE" ]]; then
+        dim "it names: $(tr -d '[:space:]' < "$root/$LATEST_FILE")"
+      else
+        dim "it is empty"
+      fi
+      dim "It must name one bundle directory inside $root that contains a"
+      dim "$MANIFEST_FILE, e.g. $(cat index-snapshots/LATEST 2>/dev/null || echo '20260927T115319Z-ollama-nomic-embed-text-768d')."
+      dim "Delete the file to ignore snapshots and ingest from the PDFs instead."
+      SNAPSHOT_MODE=never
+      return 1
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 on_error() {
   local code=$?
   printf '\n%sfailed%s (exit %s) at run.sh line %s\n' "$C_RED" "$C_RESET" "$code" "$1" >&2
@@ -330,15 +486,34 @@ preflight() {
   resolve_docker
   resolve_compose
 
+  local pdfs=()
   shopt -s nullglob
-  local pdfs=(data/pdfs/*.pdf data/pdfs/*.PDF)
+  pdfs=(data/pdfs/*.pdf data/pdfs/*.PDF)
   shopt -u nullglob
   if (( ${#pdfs[@]} == 0 )); then
-    warn "no PDFs in data/pdfs — the corpus is gitignored, so a fresh clone is empty."
-    dim "The app will start and answer everything with 'not found' until you add some."
-    dim "Copy your BIS PDFs into data/pdfs/ and re-run, or pass --skip-ingest to continue now."
+    # Not a blocker any more. A prepared index needs no PDFs at all; only a real
+    # ingest does, and the ingest step is what will say so if it gets there.
+    if snapshot_dir >/dev/null 2>&1; then
+      info "no PDFs in data/pdfs, but there is a prepared index to load from."
+    else
+      warn "no PDFs in data/pdfs — the corpus is gitignored, so a fresh clone is empty."
+      dim "Put your BIS PDFs in data/pdfs/ to ingest, or drop a prepared index"
+      dim "into index-snapshots/ to load one in seconds. The app will start and"
+      dim "answer everything with 'not found' until you do one of those."
+    fi
   else
     ok "${#pdfs[@]} PDF(s) in data/pdfs"
+  fi
+
+  if [[ "$SNAPSHOT_MODE" != never ]]; then
+    local snap
+    if [[ -f index-snapshots/$LATEST_FILE ]] && ! snap="$(snapshot_or_explain index-snapshots)"; then
+      :  # snapshot_or_explain already explained it, and turned snapshots off
+    elif [[ -n "${snap:-}" ]]; then
+      ok "prepared index: $snap"
+    else
+      dim "no prepared index in index-snapshots/ — the corpus will be ingested from the PDFs"
+    fi
   fi
 
   if port_busy 3000; then
@@ -398,14 +573,15 @@ do_stop() {
   resolve_docker
   resolve_compose
   compose down
-  ok "stopped. The database and the model weights are still there."
+  ok "stopped. The database is still there. Model weights live on the host."
 }
 
 do_reset() {
   step "Resetting"
   resolve_docker
   resolve_compose
-  printf '  This deletes the database volume and ~3 GB of model weights.\n' >&2
+  printf '  This deletes the database volume, so the next start re-loads the corpus.\n' >&2
+  printf '  Model weights on the host are NOT touched.\n' >&2
   local answer
   read -r -p "  Type 'reset' to continue: " answer
   if [[ "$answer" != "reset" ]]; then
@@ -413,21 +589,22 @@ do_reset() {
     return 0
   fi
   compose down -v
-  ok "deleted. Next ./run.sh starts from an empty corpus."
+  ok "deleted. Next ./run.sh loads the corpus again from a snapshot or the PDFs."
 }
 
 do_logs() {
   resolve_docker
   resolve_compose
-  compose logs -f app ollama
+  compose logs -f app
 }
 
 do_up() {
   preflight
   ensure_env
+  check_ollama
 
   step "Building and starting the stack"
-  info "first run pulls ~3 GB of models; later runs take seconds"
+  info "models live on the host, so this only builds the app image"
   compose up -d --build
 
   step "Waiting for each service to be actually ready"
@@ -438,26 +615,13 @@ do_up() {
     die "the database did not come up. Nothing else can work until it does."
   fi
 
-  if ! wait_healthy "$C_OLLAMA" "ollama"; then
-    warn "ollama never became healthy. Its logs:"
-    show_logs ollama 40
-    die "the model server did not come up."
-  fi
-
-  if ! wait_completed "$C_MODELS" "models"; then
-    warn "the model pull did not finish successfully. Its logs:"
-    show_logs models 40
-    die "models missing. The app is deliberately held down until they arrive,
-       rather than starting and answering every question with a model error."
-  fi
-
   if ! wait_healthy "$C_APP" "app"; then
     warn "the app never became healthy. Its logs:"
     show_logs app 40
     die "the app did not come up."
   fi
 
-  maybe_ingest
+  maybe_load_corpus
   report
 }
 
@@ -472,14 +636,13 @@ chunk_count() {
   printf '%s' "${n:-0}"
 }
 
-maybe_ingest() {
+maybe_load_corpus() {
+  step "Corpus"
   if (( SKIP_INGEST )); then
-    step "Ingest"
     dim "skipped (--skip-ingest)"
     return 0
   fi
 
-  step "Ingest"
   local json chunks
   json="$(health_json)"
   chunks="$(chunk_count "$json")"
@@ -489,16 +652,85 @@ maybe_ingest() {
     return 0
   fi
 
+  # Empty. A prepared index is seconds; ingest is minutes, so try it first.
+  if [[ "$SNAPSHOT_MODE" != never ]]; then
+    local snap
+    if snap="$(snapshot_or_explain index-snapshots)"; then
+      if try_snapshot "$snap"; then
+        return 0
+      fi
+      if [[ "$SNAPSHOT_MODE" == only ]]; then
+        die "--import-snapshot was given and the bundle could not be used.
+       The app is up and the database is empty, so it answers 'not found' to
+       everything. Fix the mismatch above, or drop --import-snapshot to ingest."
+      fi
+      info "falling back to ingesting from the PDFs"
+    fi
+  fi
+
+  ingest_pdfs
+}
+
+# Load a bundle. Returns 0 if the store is now populated, 1 to fall back.
+#
+# The importer does the real work of deciding whether the bundle is safe: it
+# checks the embedding model against .env and verifies every checksum before it
+# writes anything. This function's job is only to notice that the importer
+# declined and explain it, so that --import-snapshot fails loudly instead of
+# quietly producing an empty corpus.
+try_snapshot() {
+  local snap="$1" started=$SECONDS
+  info "loading the prepared index from $snap"
+  # --no-deps so Compose does not restart the running app for a one-off task.
+  local log
+  log="$(mktemp)"
+  if compose run --rm --no-deps -T app npm run --silent index:import -- \
+        --dir "/index-snapshots/$(basename "$snap")" >"$log" 2>&1; then
+    sed 's/^/    /' "$log"
+    local chunks now
+    now="$(chunk_count "$(health_json)")"
+    if [[ "$now" =~ ^[0-9]+$ ]] && (( now > 0 )); then
+      rm -f "$log"
+      ok "index loaded in $(( (SECONDS - started) / 60 ))m $(( (SECONDS - started) % 60 ))s — $now chunk(s)"
+      # The PDFs are not in the bundle, so a missing corpus is worth saying
+      # plainly here rather than letting someone find out by clicking a citation.
+      if [[ -z "$(ls -A data/pdfs/*.pdf data/pdfs/*.PDF 2>/dev/null || true)" ]]; then
+        dim "No PDFs in data/pdfs, so answers work but citation links will not open."
+        dim "Copy the standards into data/pdfs/ to get them."
+      fi
+      return 0
+    fi
+    chunks="the importer reported success but the store is still empty"
+  else
+    chunks="$(grep -E '^\[import\]|^ *-' "$log" | head -20 || true)"
+  fi
+  rm -f "$log"
+  warn "could not use that index:"
+  [[ -n "$chunks" ]] && printf '%s\n' "$chunks" | sed 's/^/    /'
+  return 1
+}
+
+ingest_pdfs() {
+  local pdfs=()
+  shopt -s nullglob
+  pdfs=(data/pdfs/*.pdf data/pdfs/*.PDF)
+  shopt -u nullglob
+  if (( ${#pdfs[@]} == 0 )); then
+    die "the corpus is empty and there is nothing to load it from.
+       Either drop a prepared index into index-snapshots/, or put the BIS PDFs
+       in data/pdfs/. The app is up and will answer 'not found' to everything
+       until one of those is done."
+  fi
+
   if (( FORCE_INGEST )); then
     info "--force-ingest: re-embedding everything"
   fi
 
-  info "extracting, chunking and embedding. This runs locally on CPU and can take"
-  info "5-20 minutes for a few thousand chunks. Output streams below — it is not stuck."
+  info "extracting, chunking and embedding ${#pdfs[@]} PDF(s). This runs locally on"
+  info "CPU and can take 5-20 minutes for a few thousand chunks. Output streams"
+  info "below — it is not stuck."
   local started=$SECONDS
-  # --no-deps so Compose does not re-run the finished models container as a
-  # dependency of this one-off container.
-  compose run --rm --no-deps app npm run ingest
+  compose run --rm --no-deps -T app npm run --silent ingest
   ok "ingest finished in $(( (SECONDS - started) / 60 ))m $(( (SECONDS - started) % 60 ))s"
 }
 

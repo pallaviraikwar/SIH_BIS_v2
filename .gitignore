@@ -10,6 +10,16 @@ node_modules/
 data/pdfs/*
 !data/pdfs/.gitkeep
 
+# Prepared index snapshots.
+#
+# Gitignored on purpose, and the ~19 MB is only the reason. A snapshot is a
+# derived artefact: anyone can rebuild one with `npm run index:export` from a
+# machine that has the corpus. Committing a binary blob of someone else's
+# standards' text into a public repo buys nothing and ages badly. Hand the
+# directory over as a zip, a release asset or a drive instead.
+index-snapshots/*
+!index-snapshots/README.md
+
 # Local artifacts
 *.log
 .DS_Store

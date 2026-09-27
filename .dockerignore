@@ -21,6 +21,13 @@ data/pdfs/*
 # ingest path never sees this one.
 listofproducts.pdf
 
+# Prepared index snapshots. Bind-mounted at runtime for the same reason the PDFs
+# are: one is ~20 MB today and grows with the corpus, and a snapshot baked into a
+# layer stays in the image even after the mount shadows it. It is also a derived
+# artifact — regenerable with `npm run index:export` — so it does not belong in
+# an image at all.
+index-snapshots
+
 # Not ignored on purpose: test/. The suite runs with no devDependencies, so
 # keeping it means `docker compose run --rm app npm test` works in the image
 # with nothing extra installed.

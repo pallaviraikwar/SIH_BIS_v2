@@ -16,7 +16,9 @@ mid-demo.
   anything older `docker compose up` fails to parse the file and blames the file
   rather than your Compose version.
 - **Node 22+**, only for the no-Docker path.
-- About **3 GB of disk** for the model weights on first run.
+- **Ollama on the host**, and three models in it. The models run on your machine,
+  not in a container — see [Models on the host](#models-on-the-host).
+- About **4.6 GB of disk** for the model weights on first run.
 - **8 GB of RAM**. The three models sit resident together at ~4.1 GB; a machine
   with less will start and then get OOM-killed mid-answer.
 
@@ -37,9 +39,15 @@ docker ps              # must now work without sudo
 
 ## Install and run
 
-Put the BIS PDFs you have in **`data/pdfs/`** first. They are gitignored, because
-the standards are not ours to redistribute, so a fresh clone has an empty folder and
-ingest will have nothing to read.
+You need a corpus one way or the other. Either
+
+- put your BIS PDFs in **`data/pdfs/`**, or
+- drop a **prepared index** into `index-snapshots/` — see
+  [Sharing a prepared index](#sharing-a-prepared-index). This takes seconds
+  instead of minutes, and needs no PDFs at all.
+
+The PDFs are gitignored, because the standards are not ours to redistribute, so a
+fresh clone has an empty `data/pdfs/`.
 
 ### One command
 
@@ -49,11 +57,12 @@ cd SIH_BIS_v2
 ./run.sh
 ```
 
-`run.sh` does the whole first run: checks Docker, creates `.env`, builds and starts
-all four containers, **waits for each one to actually be ready** rather than
-assuming, pulls the models, ingests your PDFs if the corpus is empty, then prints
-the health report and the URL. It is idempotent — run it again whenever and it
-repairs what is missing instead of starting over.
+`run.sh` does the whole first run: checks Docker and Ollama, creates `.env`, builds
+and starts the two containers, **waits for each one to actually be ready** rather
+than assuming, then fills the corpus — from a prepared index if there is a
+compatible one, otherwise by ingesting your PDFs — and finally prints the health
+report and the URL. It is idempotent: run it again whenever and it repairs what is
+missing instead of starting over.
 
 It also fixes the two things that most often derail this by hand: not telling you
 the stack is up while Postgres is still initialising, and not noticing that port
@@ -62,31 +71,33 @@ the stack is up while Postgres is still initialising, and not noticing that port
 | | |
 | --- | --- |
 | `./run.sh --status` | what is running, and the health report. Changes nothing. |
-| `./run.sh --logs` | follow the app and Ollama logs |
+| `./run.sh --logs` | follow the app logs |
 | `./run.sh --stop` | stop the stack, keep the data |
-| `./run.sh --reset` | stop and **delete** the database and the model weights |
+| `./run.sh --reset` | stop and **delete** the database volume. Model weights on the host are untouched. |
 | `./run.sh --smoke` | also ask one real question, end to end |
 | `./run.sh --force-ingest` | re-embed even though the corpus is non-empty |
 | `./run.sh --skip-ingest` | bring the stack up and stop there |
+| `./run.sh --import-snapshot` | only load a prepared index, never fall back to ingest |
+| `./run.sh --no-snapshot` | ignore `index-snapshots/` and ingest from the PDFs |
 
 Then open **http://localhost:3000**.
 
 ### Doing it by hand
 
 ```bash
-cp .env.example .env          # no API key to fill in — the defaults are local
-npm run docker:up             # or: docker compose up -d --build
-npm run docker:ingest         # extract, chunk, embed, store
+./scripts/ollama-host-setup.sh  # once, needs sudo
+cp .env.example .env            # no API key to fill in — the defaults are local
+npm run docker:up               # or: docker compose up -d --build
+npm run docker:ingest           # extract, chunk, embed, store
 ```
 
-The first `docker:up` pulls ~3 GB of models and takes a few minutes. Later starts
-take seconds. Four containers come up: `pgvector` (the store), `ollama` (the
-models), `models` (a one-shot pull that then exits), and `app`.
+Two containers come up: `pgvector` (the store) and `app`. Ollama is already
+running on the host, so the first `docker:up` only builds the app image.
 
 Everything above is also available as plain `docker compose` commands — the npm
 scripts just save you typing. `npm run docker:logs` to watch, `npm run
 docker:down` to stop, `npm run docker:reset` to stop **and delete** the database
-and the model weights.
+volume. The model weights live on the host and no Compose command touches them.
 
 ### On Windows
 
@@ -119,6 +130,92 @@ ollama serve                 # must already be running; see .env.example for the
 npm run ingest
 npm start                    # http://localhost:3000
 ```
+
+## Models on the host
+
+Ollama runs on your machine, not in a container. The weights are 4.6 GB; in a
+Compose volume they would be at the mercy of a stray `docker compose down -v` and
+would be re-downloaded on every new machine that may already have them.
+
+Install the three models this project needs, and make Ollama reachable from the
+container, in one step:
+
+```bash
+./scripts/ollama-host-setup.sh
+```
+
+It writes a systemd drop-in, restarts Ollama, pulls whatever is missing, and then
+verifies. It needs `sudo` once. Re-run it any time; it is safe and it will not
+re-download what you have.
+
+| | |
+| --- | --- |
+| `./scripts/ollama-host-setup.sh --check` | report what is present, change nothing |
+| `./scripts/ollama-host-setup.sh --revert` | undo the systemd change |
+
+**It also exposes Ollama to your whole network.** The drop-in sets
+`OLLAMA_HOST=0.0.0.0`, and Ollama has no authentication of its own — anything that
+can reach port 11434 can read your models and run them. That is the only way a
+container can reach a host service, so on a shared or untrusted network use
+`--revert` afterwards, or reach Ollama over a Tailscale/WireGuard interface
+instead.
+
+The container reaches the host as `host.docker.internal`, mapped through
+`extra_hosts: host-gateway`. `run.sh` tests this from inside a container rather
+than assuming it, because a loopback-only Ollama looks perfectly healthy from your
+shell and still fails from the app.
+
+If you would rather not touch systemd, any equivalent works: bind Ollama to
+`0.0.0.0:11434` yourself and set `OLLAMA_BASE_URL` in `.env` to an address the
+container can reach.
+
+## Sharing a prepared index
+
+Ingesting a few thousand chunks on CPU takes 5-20 minutes. Doing it once and
+carrying the result is a much better deal, so the project can export its whole
+index as a self-contained directory.
+
+```bash
+npm run index:export                  # -> index-snapshots/<stamp>-<model>-<dims>/
+```
+
+You get roughly 19 MB for 5,063 chunks, containing every vector, plus a
+`manifest.json` that records which embedding model produced them, the chunking
+settings, a SHA-256 for every file, and the name, size and digest of each source
+PDF. Copy the directory to whoever needs it, and on their machine:
+
+```bash
+./run.sh --import-snapshot
+```
+
+That is the entire install. `run.sh` does it automatically when the corpus is
+empty, so usually you need to do nothing at all.
+
+`index-snapshots/LATEST` names which bundle to use. It is a plain text file, not a
+symlink, because symlinks do not survive being zipped and copied around.
+
+**The bundle contains no PDFs**, and that is deliberate — the standards are not
+ours to redistribute, and the PDFs are 16 MB on top of the 19 MB of vectors. So on
+a machine that does not already have the corpus, answers are fully grounded but
+clicking a citation will not open anything. The import tells you which documents
+are affected. Drop the PDFs into `data/pdfs/` and the links resolve.
+
+Three things about a bundle are worth knowing:
+
+- **It refuses a model mismatch.** If `.env` names a different embedding model or
+  vector width, the import stops before writing anything. Vectors from two
+  unrelated models are not comparable, and a corpus that mixes them answers
+  confidently and wrongly. `run.sh` then falls back to ingesting from the PDFs,
+  so the mismatch costs you time rather than correctness.
+- **It verifies every checksum** before it touches the database, so a truncated
+  download is caught rather than imported as a corpus that is quietly missing
+  documents.
+- **It is idempotent.** Loading the same bundle twice changes nothing. To replace
+  an index built by a different model, `npm run index:import -- --replace`.
+
+The whole folder is gitignored. It is a derived artefact that anyone can rebuild
+from a corpus they already have, and a 19 MB binary blob of extracted standards
+text does not belong in a public repository.
 
 ## Verify it works
 
@@ -177,21 +274,41 @@ so nothing else changes.
 
 **The container database is empty even though the app was working before.** A
 Docker volume and a Postgres you installed natively are different databases. The
-container's `bis_pgdata` volume starts empty, so run `npm run docker:ingest`. If
-you would rather keep using the Postgres you already have, stay on the no-Docker
-path — it only needs Postgres, and the app works against either.
+container's `bis_pgdata` volume starts empty. Either put a prepared index in
+`index-snapshots/` and run `./run.sh --import-snapshot`, or `npm run
+docker:ingest`. If you would rather keep using the Postgres you already have,
+stay on the no-Docker path — it only needs Postgres, and the app works against
+either.
 
-**Answers fail with a model or connection error, but `/api/health` is `ok`.** The
-app cannot reach Ollama. Check `npm run docker:logs` for the `ollama` service, and
-confirm the models arrived: `docker compose exec ollama ollama list`. All three of
-`nomic-embed-text`, `MedAIBase/Tencent-HY-MT1.5:1.8b-q4_K_M` and
-`mashriram/sarvam-1` need to be there.
+**Ollama is running, but the app says it cannot reach it.** Almost always the
+binding. Ollama listens on `127.0.0.1` by default, and a container has no
+interface to loopback on the host, so the app cannot connect no matter how healthy
+Ollama looks from your shell. `./scripts/ollama-host-setup.sh --check` says which
+of the two cases you are in. `./scripts/ollama-host-setup.sh` fixes it, and
+`--revert` puts it back.
+
+**A prepared index was rejected: "embedding model differs".** The bundle was built
+with a different `EMBED_MODEL` than your `.env` has. Vectors from two models
+cannot be compared, so this is refused on purpose. Either set `EMBED_MODEL` in
+`.env` to what the bundle's `manifest.json` says, or ignore the bundle and ingest
+your own PDFs with `./run.sh --no-snapshot`.
+
+**`./run.sh` ignored my index-snapshots bundle.** It only loads one when the
+corpus is empty, unless you pass `--force-ingest`, which deliberately rebuilds
+instead. `npm run index:import -- --dir index-snapshots/<name>` runs it on demand
+and prints exactly what it refused and why.
+
+**Answers fail with a model or connection error, but `/api/health` is `ok`.** Ollama
+runs on the host, so there is no `ollama` service to read logs from. Check
+`ollama list` — `nomic-embed-text`, `MedAIBase/Tencent-HY-MT1.5:1.8b-q4_K_M` and
+`mashriram/sarvam-1` all need to be there — and `./scripts/ollama-host-setup.sh
+--check` for reachability from the container.
 
 **Answers come back truncated, generic, or citing a passage that is not in the
 Sources block.** Check `OLLAMA_CONTEXT_LENGTH` is `8192`. Ollama's default is 4096
 and a grounded prompt here is ~5,400-6,600 tokens; the daemon does not reject an
 oversized prompt, it trims the evidence and still returns HTTP 200, so this fails
-silently. Both the app and the `ollama` service set it in `docker-compose.yml`.
+silently. `scripts/ollama-host-setup.sh` sets it in the host's systemd drop-in.
 
 **`/api/health` says `degraded` and names no chunks.** Ingest has not been run, or
 ran against an empty `data/pdfs`. The corpus is not in version control, so a fresh
@@ -221,10 +338,10 @@ people actually change:
 
 | setting | default | when to change it |
 | --- | --- | --- |
-| `PDF_DIR` | `./data/pdfs` | where the PDFs are |
+| `PDF_DIR` | `./data/pdfs` | where the PDFs are. In Docker this is `/data/pdfs`. |
 | `PDF_EXCLUDE` | `listofproducts` | comma-separated filename substrings to skip |
 | `DATABASE_URL` | `…@127.0.0.1:5433/bis_rag` | in Docker this is overridden to the service name |
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | in Docker this is overridden to `http://ollama:11434` |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | in Docker this is overridden to `http://host.docker.internal:11434` |
 | `SIMILARITY_THRESHOLD` | `0.67` | after adding documents or changing the model — re-measure, do not guess |
 | `GEN_MODEL` / `EMBED_MODEL` | local Ollama | see `.env.example` for what each requires |
 
@@ -234,7 +351,7 @@ so if a key ever reaches chat, logs or a commit, rotate it before shipping.
 ## Tests
 
 ```bash
-npm test          # 274 tests, no network, ~5s
+npm test          # 316 tests, no network, ~5s
 npm run test:e2e  # real local models against an in-memory store
 ```
 

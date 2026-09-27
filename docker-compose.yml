@@ -1,8 +1,14 @@
-# The whole stack: Postgres+pgvector, Ollama with the models, and the app.
+# The whole stack: Postgres+pgvector and the app. Two services.
 #
-#   docker compose up -d --build          bring everything up
-#   docker compose run --rm app npm run ingest
+#   ./scripts/ollama-host-setup.sh          once: bind Ollama, pull the models
+#   docker compose up -d --build            bring the rest up
 #   open http://localhost:3000
+#
+# Generation and embedding run in Ollama on the HOST, not in here. That is the
+# whole point of `host.docker.internal` below, and the reasoning is in
+# scripts/ollama-host-setup.sh. Short version: the host already has the models,
+# and a second ollama service meant a second ~2.9 GB pull for the same weights
+# plus a root-ownership trap around the model store.
 #
 # Read README.md "Prerequisites" first if `docker ps` gives you a permission
 # error — that is a host group membership problem, not a problem with this file.
@@ -37,81 +43,6 @@ services:
       timeout: 5s
       retries: 10
 
-  # ---------------------------------------------------------------- local models
-  ollama:
-    image: ollama/ollama:latest
-    container_name: bis-ollama
-    restart: unless-stopped
-    environment:
-      # Without this the server binds inside the container and the app cannot
-      # reach it. Ollama defaults to 127.0.0.1, which for a published port
-      # means nothing outside the container can connect.
-      OLLAMA_HOST: "0.0.0.0:11434"
-      # Keep weights resident between questions. The default unloads after 5
-      # minutes, and a cold sarvam-1 load is a multi-second pause on the first
-      # question after a break.
-      OLLAMA_KEEP_ALIVE: "-1"
-      # Also set on the app, which is what actually reads it — see below. Here
-      # it only fixes the server-wide default for anything else that talks to
-      # this daemon.
-      OLLAMA_CONTEXT_LENGTH: "8192"
-    volumes:
-      # A named volume owned by this container, deliberately NOT a bind mount of
-      # the host's /usr/share/ollama/.ollama/models.
-      #
-      # That directory is root-owned, so the app user cannot read it, and this
-      # container runs as root — meaning a `ollama pull` here writes root-owned
-      # blobs into a store the host's systemd Ollama service reads as the user
-      # `ollama`. The failure that causes is ugly and intermittent: it works
-      # until the first new model, then the host service cannot write its own
-      # manifest. A named volume costs a one-time ~2.9 GB pull and cannot touch
-      # the host. If you do want to share the host store, replace this line with
-      #   - /usr/share/ollama/.ollama/models:/root/.ollama
-      # and run the daemon as the same user that owns it.
-      - ollama-models:/root/.ollama
-    healthcheck:
-      # The CLI is in the image, so this needs no curl. `ollama list` is a
-      # round-trip to the HTTP server, which is the thing being probed.
-      test: ["CMD-SHELL", "ollama list > /dev/null 2>&1"]
-      interval: 5s
-      timeout: 10s
-      retries: 12
-      start_period: 20s
-
-  # ---------------------------------------------------------------- model pull
-  # One-shot. Exists so that first run is genuinely one command: without it,
-  # `docker compose up` gives you a healthy app that answers every question
-  # with a model error, and the README would have to say "now run this".
-  #
-  # Pulling a model that is already present is a no-op, so this is safe on every
-  # `up` and costs a few seconds rather than 2.9 GB. The three are exactly the
-  # ones in .env.example; a fourth model, qwen2.5:3b, is on the host and unused.
-  models:
-    image: ollama/ollama:latest
-    container_name: bis-ollama-models
-    depends_on:
-      ollama:
-        condition: service_healthy
-    environment:
-      OLLAMA_HOST: "http://ollama:11434"
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -e
-        for m in \
-          nomic-embed-text \
-          MedAIBase/Tencent-HY-MT1.5:1.8b-q4_K_M \
-          mashriram/sarvam-1
-        do
-          echo "[models] pulling $$m"
-          ollama pull "$$m"
-        done
-        echo "[models] all three present"
-    # No restart policy: this container is supposed to finish. `app` waits on
-    # service_completed_successfully, so a failed pull keeps the app down with
-    # a visible reason instead of starting with a model that is not there.
-    restart: "no"
-
   # ---------------------------------------------------------------- app
   app:
     build: .
@@ -124,13 +55,18 @@ services:
     depends_on:
       pgvector:
         condition: service_healthy
-      models:
-        # Not just ordering: this is the difference between "the app is up" and
-        # "the app is up and can actually answer", since generation and
-        # embedding are the models this service guarantees are present.
-        condition: service_completed_successfully
     ports:
       - "3000:3000"
+    # The container reaches the host's Ollama through this name.
+    #
+    # `host-gateway` is the part that matters, and it is Linux-only: Docker's
+    # embedded DNS does not know this name on Linux (Docker Desktop for Mac and
+    # Windows provide it themselves, which is why this is often missed until it
+    # fails on the one machine that needed it). It maps the name to the bridge
+    # gateway — 172.17.0.1 on the default bridge — which is the host's address
+    # as seen from inside a container.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       # Everything from .env, so local overrides still apply.
       #
@@ -141,22 +77,30 @@ services:
       - path: .env
         required: false
     environment:
-      # These four override .env, and `environment:` beats `env_file:` in
-      # Compose. That precedence is the whole point of this block: .env ships
-      # pointing at 127.0.0.1, which inside a container is the container.
+      # These override .env, and `environment:` beats `env_file:` in Compose.
+      # That precedence is the whole point of this block: .env ships pointing at
+      # 127.0.0.1, which inside a container is the container.
       #
       # Service names, never 127.0.0.1 — Docker's embedded DNS resolves them.
       DATABASE_URL: postgres://bis:bis@pgvector:5432/bis_rag
-      OLLAMA_BASE_URL: http://ollama:11434
-      # Absolute, because config.js resolves PDF_DIR against process.cwd() and
-      # the mount below is not under /app.
+      # Absolute, because config.js resolves PDF_DIR against process.cwd() (/app)
+      # and the mount below is at /data/pdfs. .env's relative ./data/pdfs is
+      # correct on the host and wrong in here — it would point at /app/data/pdfs,
+      # which is empty, so ingest would find nothing and every citation would 404
+      # while the corpus still answered.
       PDF_DIR: /data/pdfs
+      # The host daemon, via the name extra_hosts provides. Requires
+      # scripts/ollama-host-setup.sh to have been run: an Ollama bound to the
+      # host's 127.0.0.1 is unreachable from here, and the symptom is a health
+      # report that says the store is fine and then every answer failing with a
+      # model connection error. run.sh checks for this before starting anything.
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
       # Not a tuning knob: correctness. Ollama's default context is 4096 and a
-      # grounded prompt here is ~5,400-6,600 tokens. The daemon does not reject
-      # an oversized prompt — it trims the evidence and still returns 200, so
-      # the model answers from a third of the passages with nothing reporting a
+      # grounded prompt here is ~5,400-6,600 tokens. The daemon does not reject an
+      # oversized prompt — it trims the evidence and still returns 200, so the
+      # model answers from a third of the passages with nothing reporting a
       # problem. providers/ollama.js sends num_ctx per request regardless, but
-      # this keeps the server default in agreement with it.
+      # this keeps the host daemon's default in agreement with it.
       OLLAMA_CONTEXT_LENGTH: "8192"
     volumes:
       # Read-only. The app only ever reads PDFs from here — ingest reads them
@@ -165,9 +109,16 @@ services:
       # gitignored, so on a fresh clone this is an empty directory and ingest
       # has nothing to do: drop the PDFs in first.
       - ./data/pdfs:/data/pdfs:ro
+      # Prepared index snapshots, so `docker compose run --rm app npm run
+      # index:import` can load one instead of re-embedding the corpus on CPU.
+      #
+      # Read-write, and that is deliberate: the import only reads, but the
+      # matching export writes, and one mount serving both directions means the
+      # two commands cannot disagree about the path. `docker compose run` does
+      # not publish ports, so this cannot collide with the app on 3000.
+      - ./index-snapshots:/index-snapshots
     # Long enough for a SIGTERM to close the pool and exit on its own.
     stop_grace_period: 15s
 
 volumes:
   bis_pgdata:
-  ollama-models:
