@@ -1,0 +1,32 @@
+# Keep the build context small and, more importantly, keep secrets and the
+# corpus out of the image. `node_modules` and `.git` are the obvious two, but
+# the third is the one that actually matters here:
+
+# .env is gitignored, and a Dockerfile COPY does not care about .gitignore.
+# Without this line the real .env — with whatever key is in it — is copied into
+# a layer, where it survives even a later `rm` and can be read out of the image
+# history by anyone who can pull it.
+.env
+.env.*
+!.env.example
+
+# The corpus is bind-mounted at runtime and must never be baked in. It is 17 MB
+# of BIS standards today and will be larger as documents are added, none of
+# which are ours to redistribute, and a PDF baked into a layer stays in the
+# image even if the bind mount later shadows it.
+data/pdfs/*
+!data/pdfs/.gitkeep
+
+# The scanned-PDF copy at the repo root. PDF_DIR points at data/pdfs, so the
+# ingest path never sees this one.
+listofproducts.pdf
+
+# Not ignored on purpose: test/. The suite runs with no devDependencies, so
+# keeping it means `docker compose run --rm app npm test` works in the image
+# with nothing extra installed.
+node_modules
+.git
+.gitignore
+*.log
+.DS_Store
+doc

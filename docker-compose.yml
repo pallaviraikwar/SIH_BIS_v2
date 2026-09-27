@@ -1,4 +1,14 @@
+# The whole stack: Postgres+pgvector, Ollama with the models, and the app.
+#
+#   docker compose up -d --build          bring everything up
+#   docker compose run --rm app npm run ingest
+#   open http://localhost:3000
+#
+# Read README.md "Prerequisites" first if `docker ps` gives you a permission
+# error — that is a host group membership problem, not a problem with this file.
+
 services:
+  # ---------------------------------------------------------------- vector store
   pgvector:
     image: pgvector/pgvector:pg17
     container_name: bis-pgvector
@@ -9,15 +19,155 @@ services:
       POSTGRES_DB: bis_rag
     ports:
       # Host 5433 -> container 5432, so this does not clash with any Postgres
-      # you already run locally.
-      - "5433:5432"
+      # you already run locally. Published rather than kept internal because the
+      # non-Docker path in the README, and psql, both talk to it directly.
+      #
+      # Overridable because 5433 is a popular port and this machine already has
+      # something on it: `PG_HOST_PORT=5434 docker compose up -d`. Note that only
+      # the *host* side moves — the app container reaches the database at
+      # pgvector:5432 regardless, so the app needs no matching change.
+      - "${PG_HOST_PORT:-5433}:5432"
     volumes:
       - bis_pgdata:/var/lib/postgresql/data
     healthcheck:
+      # The app waits on this. It is the reason `app` does not boot, log
+      # "Could not connect to Postgres", and carry on with an empty store.
       test: ["CMD-SHELL", "pg_isready -U bis -d bis_rag"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  # ---------------------------------------------------------------- local models
+  ollama:
+    image: ollama/ollama:latest
+    container_name: bis-ollama
+    restart: unless-stopped
+    environment:
+      # Without this the server binds inside the container and the app cannot
+      # reach it. Ollama defaults to 127.0.0.1, which for a published port
+      # means nothing outside the container can connect.
+      OLLAMA_HOST: "0.0.0.0:11434"
+      # Keep weights resident between questions. The default unloads after 5
+      # minutes, and a cold sarvam-1 load is a multi-second pause on the first
+      # question after a break.
+      OLLAMA_KEEP_ALIVE: "-1"
+      # Also set on the app, which is what actually reads it — see below. Here
+      # it only fixes the server-wide default for anything else that talks to
+      # this daemon.
+      OLLAMA_CONTEXT_LENGTH: "8192"
+    volumes:
+      # A named volume owned by this container, deliberately NOT a bind mount of
+      # the host's /usr/share/ollama/.ollama/models.
+      #
+      # That directory is root-owned, so the app user cannot read it, and this
+      # container runs as root — meaning a `ollama pull` here writes root-owned
+      # blobs into a store the host's systemd Ollama service reads as the user
+      # `ollama`. The failure that causes is ugly and intermittent: it works
+      # until the first new model, then the host service cannot write its own
+      # manifest. A named volume costs a one-time ~2.9 GB pull and cannot touch
+      # the host. If you do want to share the host store, replace this line with
+      #   - /usr/share/ollama/.ollama/models:/root/.ollama
+      # and run the daemon as the same user that owns it.
+      - ollama-models:/root/.ollama
+    healthcheck:
+      # The CLI is in the image, so this needs no curl. `ollama list` is a
+      # round-trip to the HTTP server, which is the thing being probed.
+      test: ["CMD-SHELL", "ollama list > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  # ---------------------------------------------------------------- model pull
+  # One-shot. Exists so that first run is genuinely one command: without it,
+  # `docker compose up` gives you a healthy app that answers every question
+  # with a model error, and the README would have to say "now run this".
+  #
+  # Pulling a model that is already present is a no-op, so this is safe on every
+  # `up` and costs a few seconds rather than 2.9 GB. The three are exactly the
+  # ones in .env.example; a fourth model, qwen2.5:3b, is on the host and unused.
+  models:
+    image: ollama/ollama:latest
+    container_name: bis-ollama-models
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: "http://ollama:11434"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        for m in \
+          nomic-embed-text \
+          MedAIBase/Tencent-HY-MT1.5:1.8b-q4_K_M \
+          mashriram/sarvam-1
+        do
+          echo "[models] pulling $$m"
+          ollama pull "$$m"
+        done
+        echo "[models] all three present"
+    # No restart policy: this container is supposed to finish. `app` waits on
+    # service_completed_successfully, so a failed pull keeps the app down with
+    # a visible reason instead of starting with a model that is not there.
+    restart: "no"
+
+  # ---------------------------------------------------------------- app
+  app:
+    build: .
+    container_name: bis-app
+    restart: unless-stopped
+    # Tini as PID 1. Node does not leak children here, but it also does not
+    # reap anything it inherits, and a compose file that grows a sidecar later
+    # should not have to be rewritten to add `init: true`.
+    init: true
+    depends_on:
+      pgvector:
+        condition: service_healthy
+      models:
+        # Not just ordering: this is the difference between "the app is up" and
+        # "the app is up and can actually answer", since generation and
+        # embedding are the models this service guarantees are present.
+        condition: service_completed_successfully
+    ports:
+      - "3000:3000"
+    env_file:
+      # Everything from .env, so local overrides still apply.
+      #
+      # required: false, because every value in it has a working default and a
+      # missing .env should not stop the stack from booting — `cp .env.example
+      # .env` is step two of the install, and compose would otherwise hard-fail on
+      # anyone who skipped it or cloned fresh.
+      - path: .env
+        required: false
+    environment:
+      # These four override .env, and `environment:` beats `env_file:` in
+      # Compose. That precedence is the whole point of this block: .env ships
+      # pointing at 127.0.0.1, which inside a container is the container.
+      #
+      # Service names, never 127.0.0.1 — Docker's embedded DNS resolves them.
+      DATABASE_URL: postgres://bis:bis@pgvector:5432/bis_rag
+      OLLAMA_BASE_URL: http://ollama:11434
+      # Absolute, because config.js resolves PDF_DIR against process.cwd() and
+      # the mount below is not under /app.
+      PDF_DIR: /data/pdfs
+      # Not a tuning knob: correctness. Ollama's default context is 4096 and a
+      # grounded prompt here is ~5,400-6,600 tokens. The daemon does not reject
+      # an oversized prompt — it trims the evidence and still returns 200, so
+      # the model answers from a third of the passages with nothing reporting a
+      # problem. providers/ollama.js sends num_ctx per request regardless, but
+      # this keeps the server default in agreement with it.
+      OLLAMA_CONTEXT_LENGTH: "8192"
+    volumes:
+      # Read-only. The app only ever reads PDFs from here — ingest reads them
+      # and the citation route streams them — and mounting read-only means a
+      # compromised container cannot rewrite the corpus. data/pdfs is
+      # gitignored, so on a fresh clone this is an empty directory and ingest
+      # has nothing to do: drop the PDFs in first.
+      - ./data/pdfs:/data/pdfs:ro
+    # Long enough for a SIGTERM to close the pool and exit on its own.
+    stop_grace_period: 15s
+
 volumes:
   bis_pgdata:
+  ollama-models:

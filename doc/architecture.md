@@ -618,13 +618,21 @@ from different embedding models are not comparable.
 ## 10. Commands
 
 ```bash
+# Everything, in containers (see section 12)
+npm run docker:up         # pgvector + ollama + models + app
+npm run docker:ingest     # (re)read the PDFs into the database
+npm run docker:logs       # follow app and ollama
+npm run docker:down       # stop
+npm run docker:reset      # stop and DELETE the database and the model weights
+
+# The same jobs against the stack you are already running
 npm start              # run the server on port 3000
 npm run dev            # same, restarting on each change
 npm test               # unit tests, no network
 npm run test:e2e       # full pipeline against the real local models
 npm run ingest         # (re)read the PDFs into the database
 npm run calibrate      # re-measure the similarity thresholds
-npm run db:up          # start the database
+npm run db:up          # start the database alone
 ```
 
 `npm test` needs `--experimental-test-module-mocks`, which is why the test files
@@ -668,3 +676,198 @@ Worth knowing before trusting a reply.
   band. The panel makes that visible, and does nothing to prevent it. Re-ranking
   or a second retrieval pass is the fix.
 - **The highlight is a first-match, not an anchor.** See section 7a.
+
+---
+
+## 12. Running it in Docker
+
+The whole stack is four services in `docker-compose.yml`: `pgvector`, `ollama`, a
+one-shot `models` pull, and `app`. `README.md` has the commands; this section is
+the reasoning, which is mostly about things that fail silently.
+
+**The app image is `node:22-slim`, not Alpine.** `unpdf` wraps pdf.js, which is
+the one dependency here that is fussy about its JavaScript environment, and the
+host is glibc. Matching it costs ~50 MB of image and removes a class of "works on
+the host, not in the container" failure that would be diagnosed as a PDF bug.
+`npm ci --omit=dev` is safe because the project has **zero** devDependencies and
+the whole suite runs on `node:test`, so dropping dev deps costs nothing and
+`npm test` still works inside the image. That is also why `test/` is not in
+`.dockerignore`.
+
+**Four environment values are overridden in `environment:`, and each is a
+footgun.** `Compose`'s `environment:` outranks `env_file: .env`, and `.env`
+ships pointing at `127.0.0.1` — which inside a container is the container
+itself:
+
+| value | override | why it cannot be left alone |
+|---|---|---|
+| `DATABASE_URL` | `@pgvector:5432` | `127.0.0.1` is the app container, not the database |
+| `OLLAMA_BASE_URL` | `http://ollama:11434` | same |
+| `PDF_DIR` | `/data/pdfs` | `config.js` resolves it against `process.cwd()`, and the mount is not under `/app` |
+| `OLLAMA_CONTEXT_LENGTH` | `8192` | see below |
+
+That last one is not a tuning knob, it is correctness, and it is the failure mode
+most likely to reach a demo. Ollama defaults to 4,096 and a grounded prompt here
+is ~5,400-6,600 tokens. The daemon does not reject an oversized prompt for
+registry models — it **silently trims the evidence and still returns HTTP 200**.
+`providers/ollama.js` therefore sends `num_ctx` on every request regardless, but
+the server-wide default is set to match so a hand-run client behaves the same.
+
+**The models live in a named volume, not a bind mount of the host's store.** The
+host's `/usr/share/ollama/.ollama/models` is root-owned and the app user cannot
+read it, while the container runs as root — so a pull in the container writes
+root-owned blobs into a store the host's systemd Ollama reads as the user
+`ollama`. The result is ugly and intermittent: it works until the first new
+model, then the host service cannot write its own manifest. A named volume costs
+a one-time ~3 GB pull and cannot touch the host.
+
+**The `models` service exists so first run is one command.** Without it,
+`docker compose up` yields a healthy app that answers every question with a model
+error, and the README has to say "now run this". `app` waits on
+`service_completed_successfully` rather than merely on ordering, so a failed pull
+leaves the app down with a visible reason instead of starting without a model.
+Pulling a model that is already present is a no-op, so this is safe on every
+`up`.
+
+**The app's liveness probe is `/`, not `/api/health`.** `/api/health` deliberately
+answers 503 when the store is unreachable or nothing is ingested — correct
+behaviour, and precisely the state a fresh container is in. Probing it would mark
+a healthy container unhealthy for the whole of first run.
+
+**The corpus is mounted read-only.** The app only ever reads PDFs: ingest reads
+them, the citation route streams them. No script in `scripts/` writes to disk at
+all, so `USER node` in the image is free.
+
+---
+
+## 13. Quota, if you switch back to a hosted provider
+
+The local default has no quota at all. This is kept because the quota shapes are
+the reason the project is local, and because the failure mode returns the moment
+a hosted provider is configured. Two different quotas share one key and are not
+interchangeable:
+
+| operation | free-tier limit | symptom when exceeded |
+|---|---|---|
+| `embedContent` / `batchEmbedContents` | ~100 **per minute**, per *item* in a batch | `429` during ingest; retried with backoff |
+| `generateContent` | ~20 **per day** per model | `429` on every answer; cannot be retried away |
+
+The daily generation cap is the one to watch. Gemini returns it as a `429` with a
+`retryDelay` of ~51s, which is misleading — the quota resets the next day, not in
+a minute. `src/gemini.js` detects the per-day quota id and fails immediately with
+an actionable message instead of hanging. **If answers start failing with "Daily
+Gemini generation quota exhausted", enable billing on the Google AI project**;
+retrieval keeps working meanwhile, because embedding has its own quota and
+`/api/search` still returns passages.
+
+---
+
+## 14. Frontend details
+
+Kept here rather than in the README because each is a consequence of a decision
+somebody had to make, and the reasoning is the useful part.
+
+### The layout
+
+- **The reading column is 68ch and centred.** Uncapped, the transcript ran the
+  full width of a wide monitor — around 1600px of line, well past the 60-80ch
+  that is comfortable to read. The composer is capped to the same measure and
+  centred on the same axis, so the Ask button sits beside the answer rather than
+  out in empty space. `test/ui-ux.test.js` reads the turn's copy and asserts the
+  composer matches it, so the two cannot drift.
+- **The composer is fixed and the document scrolls.** That is why the transcript
+  cannot be scrolled with `scrollTop`, why an arriving answer is only scrolled
+  into view if you were already at the bottom, and why the main column carries
+  `padding-bottom` to clear the composer.
+- **The header line carries counts, not titles.** It used to list every document
+  title in the corpus, so the header grew with what had been ingested — four rows
+  on a desktop, eight on a phone, from five PDFs. The titles are in the tooltip
+  and the sidebar lists the same set.
+- **Below 860px the sidebar is a drawer**, not `display: none`. It is the only
+  route to passage search and to the topic list, and hiding it removed both from
+  the device a standards answer is most likely read on. It opens from an "Index"
+  button, closes with the × / the scrim / `Escape`, marks the rest of the page
+  `inert` while open, and closes itself if the viewport widens, so a rotation
+  cannot leave `inert` stuck on the app. Each long region caps itself in `vh` and
+  scrolls, so search and Clear transcript stay reachable on a short window.
+- **Touch targets are at least 44px at that width.** The send button was 36px and
+  a sidebar row 30px.
+
+### Colour
+
+Every colour is a custom property, declared in four blocks: the base `:root`, a
+`prefers-color-scheme: dark` override, and one `:root[data-theme='…']` per scheme
+for an explicit choice. The header button cycles **system → light → dark** and
+stores the choice in `localStorage`.
+
+Two things to know before editing a colour:
+
+- **"System" is the absence of `data-theme`, not a value.** The attribute is only
+  set for a deliberate choice, so `prefers-color-scheme` keeps answering on its
+  own for everyone who has not pressed the button — including on first paint,
+  before any script runs, so there is no flash of the wrong theme.
+- **The forced blocks restate both palettes, and that duplication is the point.**
+  CSS cannot say "use the dark values" other than through a media query or a
+  selector, and a media query cannot see an attribute. `:root` is specificity
+  (0,1,0) and `:root[data-theme]` is (0,2,0), so a choice wins without
+  `!important` and regardless of block order. `color-scheme` is pinned per block
+  because no token can carry it — scrollbars, the search field and the PDF viewer
+  have to follow the chosen scheme. The cost is that a colour edited in one place
+  can be forgotten in another, so `test/ui-ux.test.js` diffs the forced blocks
+  against the originals and measures all four with the same contrast list. **Edit
+  all of them or expect the suite to fail.**
+
+### The Quick Directory
+
+The sidebar originally listed four hardcoded Indian Standard codes (IS 302, IS
+1011, IS 14543, IS 1293) that were **not in the corpus**. That is worse than no
+directory: the codes looked authoritative and clicking one produced a refusal.
+The panel now queries `/api/search`, so it can only show what the vector store
+actually holds, and an empty panel honestly means "not in this corpus".
+
+Two consequences:
+
+- **Search is debounced (350ms) and needs 3+ characters.** Every search costs one
+  embedding call and `oninput` fires per keystroke — without the debounce, typing
+  "hallmarking" would spend 11 calls against the ~100/min cap.
+- **Directory search is English-only**, because `/api/search` embeds the query as
+  typed while the indexed documents are English. The chat endpoint does
+  translate, so non-English questions work there.
+
+If the model call fails but retrieval succeeded, the response **degrades** rather
+than erroring: `answer` explains that passages were found but generation failed,
+the passages are still shown, and `meta.degraded` is `true`. That case is kept
+distinct from `notFound` on purpose — telling a user their question is
+unanswerable when the real problem is a model outage sends them off to rephrase a
+question that was fine.
+
+---
+
+## 15. Security
+
+`.env` is gitignored and a real key must never be committed. This repository is a
+**public fork** — if a key was ever pasted into chat, logs, or a commit, rotate it
+in the Google AI console before shipping.
+
+`GET /api/documents/:docId/pdf` takes no filename from the URL. It looks the
+document up by `docId`, reads `source_file` from the database, and refuses any
+resolved path that escapes `config.corpus.pdfDir` (absolute paths and NUL bytes
+included). The filename is never attacker-controlled, so ordinary path traversal
+does not apply — the guard is a second line of defence.
+
+The route is unauthenticated, which means it exposes the full text of every
+indexed document to anyone who can reach the server. That is open by design here,
+because the corpus is the product, but two consequences are worth stating:
+
+- The full PDF is downloadable by anyone who can reach the port.
+- `data/pdfs` is **not** in version control — the BIS standards are not ours to
+  redistribute — and `.dockerignore` keeps them out of the image, so the corpus
+  is only on disk and on the mounted volume.
+
+Keep the port bound to localhost, or put authentication in front of it, before
+exposing the app.
+
+**Everything else is escaped.** The frontend's `innerHTML` sink makes unescaped
+model output a script-injection vector, and document titles come from
+user-supplied filenames. Both are escaped server-side, and `test/chunker.test.js`
+asserts `<script>` and `<b>` survive only as entities.
