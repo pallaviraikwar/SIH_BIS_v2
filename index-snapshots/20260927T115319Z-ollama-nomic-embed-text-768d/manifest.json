@@ -1,0 +1,78 @@
+{
+  "format": "bis-index-snapshot",
+  "formatVersion": 1,
+  "createdAt": "2026-09-27T11:53:27.466Z",
+  "embed": {
+    "provider": "ollama",
+    "model": "nomic-embed-text",
+    "dims": 768,
+    "prefixTitle": true
+  },
+  "chunking": {
+    "chars": 1200,
+    "overlap": 200,
+    "minSealChars": 600
+  },
+  "corpus": {
+    "docCount": 5,
+    "chunkCount": 5063,
+    "pageCount": 1476
+  },
+  "documents": [
+    {
+      "docId": "bis_ca_12032019",
+      "docTitle": "BIS CA 12032019",
+      "sourceFile": "BIS_CA_12032019.pdf",
+      "pageCount": 412,
+      "chunkCount": 1152,
+      "pdfBytes": 7312036,
+      "pdfSha256": "531e12c5a8a15a1bd6a9b4f01e2cb8e9f9c3c9e1afb763a0362da518e0a27666"
+    },
+    {
+      "docId": "bis-hallmarking-regulations-2018-incorp.-amdt-1",
+      "docTitle": "BIS Hallmarking Regulations 2018 Incorp Amdt 1",
+      "sourceFile": "BIS-Hallmarking-Regulations-2018-Incorp.-Amdt-1.pdf",
+      "pageCount": 92,
+      "chunkCount": 269,
+      "pdfBytes": 1400015,
+      "pdfSha256": "8aeefa711488a9e8dae283282f4121c331dd8005e3981bc1b7d1d58ce673a40d"
+    },
+    {
+      "docId": "bis_rod_order_12092019",
+      "docTitle": "the Bureau of Indian Standards ACT, 2016 NO. 11 of 2016",
+      "sourceFile": "BIS_ROD_Order_12092019.pdf",
+      "pageCount": 17,
+      "chunkCount": 97,
+      "pdfBytes": 136658,
+      "pdfSha256": "c72cea7cea17b7fa2f7846e399da106b0a42a404e6e8d9edd9364e6acdce31ee"
+    },
+    {
+      "docId": "golguidelines_01052019",
+      "docTitle": "GoLGuidelines 01052019",
+      "sourceFile": "GoLGuidelines_01052019.pdf",
+      "pageCount": 26,
+      "chunkCount": 100,
+      "pdfBytes": 493583,
+      "pdfSha256": "a568172578da00ceb4350f46dd4618e09ebc7c2f158248ba18c18850636f9056"
+    },
+    {
+      "docId": "is.sp.21.2005",
+      "docTitle": "SP 21 — Summaries of Indian Standards for Building Materials",
+      "sourceFile": "is.sp.21.2005.pdf",
+      "pageCount": 929,
+      "chunkCount": 3445,
+      "pdfBytes": 7537270,
+      "pdfSha256": "20bfd1e02f9d32a0f81c49c21a85e69ce59fefd5cfc2798741634684ab29ade2"
+    }
+  ],
+  "files": {
+    "documents.jsonl.gz": {
+      "bytes": 692,
+      "sha256": "df8f9ce77090c0debaa9a354cbe2c7dadc98fee1227e16cf01c280d7932d672d"
+    },
+    "chunks.jsonl.gz": {
+      "bytes": 19895756,
+      "sha256": "fc757302de3712e872a251f667062681b25b36ade3622e836dd289e56845886b"
+    }
+  }
+}
