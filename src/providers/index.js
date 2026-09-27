@@ -110,5 +110,38 @@ export async function embedQuery(text) {
   return provider(config.embedding.provider).embedQuery(text);
 }
 
+/**
+ * Translate, on a model that is not the answering model.
+ *
+ * This exists as its own entry point rather than a flag on `generateText` because
+ * the two jobs need different models, different prompt formats and different
+ * timeouts, and `generateText` is hardcoded to `config.generation.*`. Before this,
+ * `rag.js` (writing prose) and `translator.js` (converting a Hindi question to
+ * English) both called `generateText` and therefore both used sarvam-1 — which is
+ * why asking it to translate produced an answer to the question instead.
+ *
+ * The dispatch is on `translation.raw` rather than on the provider alone. Only
+ * Ollama exposes a raw completion path; the hosted providers have no equivalent,
+ * so a `TRANSLATION_PROVIDER` pointed at one of them still works through the
+ * chat route instead of failing on a missing method.
+ *
+ * There is deliberately no fallback ladder here, unlike above. A fallback *writer*
+ * produces different prose for the same question, which is harmless. A fallback
+ * *translator* can produce a different language, and the retrieval that follows
+ * would be wrong with nothing downstream able to detect it. Better to throw and let
+ * the caller degrade to a reply that admits the translation failed.
+ */
+export async function translateText({ prompt, temperature, maxOutputTokens }) {
+  const { provider: which, raw } = config.translation;
+
+  if (raw && typeof provider(which).rawGenerate === 'function') {
+    const text = await provider(which).rawGenerate({ prompt, temperature, maxOutputTokens });
+    return { text, provider: which, raw: true };
+  }
+
+  const gen = await generateText({ prompt, temperature, maxOutputTokens });
+  return { ...gen, raw: false };
+}
+
 export const activeEmbeddingProvider = () => config.embedding.provider;
 export const activeGenerationProvider = () => config.generation.provider;

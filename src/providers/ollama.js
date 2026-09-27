@@ -118,7 +118,7 @@ function errorFor(err, label, model) {
  * daemon that is genuinely down should fail fast and loudly, not be retried for
  * a minute.
  */
-async function postJson(path, body, { label, attempts = 3, baseDelayMs = 400 } = {}) {
+async function postJson(path, body, { label, attempts = 3, baseDelayMs = 400, timeoutMs } = {}) {
   let lastErr;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -131,7 +131,12 @@ async function postJson(path, body, { label, attempts = 3, baseDelayMs = 400 } =
         // with no GPU), so the ceiling is generous. It is not infinite: a wedged
         // request should surface as a failure the app can degrade from, not as a
         // socket that hangs until the client gives up.
-        signal: AbortSignal.timeout(config.ollama.timeoutMs),
+        //
+        // Overridable per call because the two jobs have different acceptable
+        // latencies: answering is allowed 5 minutes, translation is allowed 60s
+        // since it sits in front of every non-English question and normally
+        // finishes in under 3.
+        signal: AbortSignal.timeout(timeoutMs ?? config.ollama.timeoutMs),
       });
 
       if (!res.ok) throw errorFor(await readError(res, label), label, body.model);
@@ -287,6 +292,60 @@ export async function chat({ systemInstruction, prompt, temperature, maxOutputTo
   const text = data.message?.content;
   if (typeof text !== 'string' || !text.trim()) {
     throw new Error(`Ollama chat returned no content: ${JSON.stringify(data).slice(0, 200)}`);
+  }
+  return text.trim();
+}
+
+/**
+ * Raw completion, for base models with no chat template.
+ *
+ * `/api/chat` above wraps a prompt in a chatml message array. That is correct for
+ * an instruct model and actively wrong for HY-MT1.5, which is a base model whose
+ * published format is a bare completion string — no roles, no system turn, no
+ * template. Sending it through the chat endpoint gets the prompt wrapped in
+ * markup it was never trained on, which produces a different model from the one
+ * the model card describes.
+ *
+ * So the parameters are taken from `config.translation` rather than
+ * `config.generation`, and `repeat_penalty` defaults to 1.0. That is not a
+ * cosmetic difference: the 1.15 on generation exists to break repetition loops in
+ * a 2B chat model, and applied to a faithful translation it discourages exactly
+ * the repeated standard codes and numerals the corpus consists of.
+ *
+ * `num_ctx` is sent here for the same reason as in `chat()` — an oversized prompt
+ * is silently truncated for registry models, and a translation that quietly loses
+ * the end of the question loses the number at the end of the question.
+ */
+export async function rawGenerate({
+  prompt,
+  model = config.translation.model,
+  temperature,
+  maxOutputTokens,
+  repeatPenalty,
+  timeoutMs,
+}) {
+  const data = await postJson(
+    '/api/generate',
+    {
+      model,
+      prompt,
+      stream: false,
+      options: {
+        num_ctx: config.ollama.numCtx,
+        temperature: temperature ?? config.translation.temperature,
+        num_predict: maxOutputTokens ?? config.translation.maxOutputTokens,
+        top_p: config.generation.topP,
+        repeat_penalty: repeatPenalty ?? config.translation.repeatPenalty,
+      },
+    },
+    { label: 'translate', timeoutMs: timeoutMs ?? config.translation.timeoutMs }
+  );
+
+  const text = data.response;
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new Error(
+      `Ollama rawGenerate(${model}) returned no text: ${JSON.stringify(data).slice(0, 200)}`
+    );
   }
   return text.trim();
 }

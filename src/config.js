@@ -78,6 +78,12 @@ export const config = {
     // How many times one sentence may repeat before the answer is treated as
     // degenerate and thrown away rather than shown to a user.
     maxSentenceRepeats: num('GEN_MAX_SENTENCE_REPEATS', 3),
+    // Below this length an answer must share a number or content word with the
+    // passages it was given, or it is treated as a non-answer and retried. Set
+    // well under a real paragraph so a terse-but-correct "43.0 MPa" still has to
+    // be checked on its merits, and well over a bare "No." (4) so that never
+    // reaches a user as though a standard had been consulted.
+    minSubstantiveChars: num('GEN_MIN_SUBSTANTIVE_CHARS', 40),
     /**
      * Asked to reproduce the answer's opening words.
      *
@@ -87,6 +93,70 @@ export const config = {
      * 1 run in 7. Setting it is nearly free; leaving it unset is not.
      */
     prefill: str('GEN_PREFILL', 'Answer:'),
+  },
+
+  /**
+   * Translation. Its own block, deliberately not folded into `generation`.
+   *
+   * Translating and answering were once the same call. `rag.js` (writing prose) and
+   * `translator.js` (converting a Hindi question into an English one) both went
+   * through `generateText()`, which hardcodes `config.generation.model` — so both
+   * silently used the same 2B chat model. It could not translate: asked to, it
+   * answered the question instead. Measured on this corpus, `TRANSLATE_SYSTEM`
+   * returned 78% Devanagari and a two-shot English-only variant returned 86%, and
+   * the caller reported `translated: true` for both.
+   *
+   * Separating the two models is not only about quality, it is about memory. The
+   * host has 7 GB and no GPU, so what runs simultaneously is a hard constraint:
+   * nomic 0.38 GB (embed) + HY-MT 1.1 GB (translate) + sarvam-1 2.67 GB (answer)
+   * ≈ 4.1-4.5 GB resident, against 5.21 GB when one model did both jobs. A
+   * dedicated translator is cheap enough to leave resident, so the answering model
+   * never has to be swapped out to make room.
+   *
+   * No `fallbackProvider`, unlike `generation`. A fallback *writer* is harmless —
+   * the worst case is different prose for the same question — but a fallback
+   * *translator* can return a different language entirely, and the retrieval that
+   * follows would be wrong in a way no later check could catch. Failing fast into
+   * the degraded path is better than a confident mistranslation.
+   */
+  translation: {
+    provider: str('TRANSLATION_PROVIDER', 'ollama'),
+    model: str('TRANSLATION_MODEL', 'MedAIBase/Tencent-HY-MT1.5:1.8b-q4_K_M'),
+    /**
+     * Send a raw completion prompt instead of a chat message array.
+     *
+     * HY-MT1.5 is a base model with no chat template. `/api/chat` would wrap the
+     * prompt in a chatml template it was never trained on, and the model card
+     * specifies a bare completion string, so the two paths are not
+     * interchangeable. This stays a flag because the other providers have no raw
+     * mode at all — switching TRANSLATION_PROVIDER away from ollama has to keep
+     * working, and chat is the only thing they offer.
+     */
+    raw: bool('TRANSLATION_RAW', true),
+    // Greedy. A translation is not a creative task, and any sampling is a chance
+    // to drop a standard number on the way through.
+    temperature: num('TRANSLATION_TEMPERATURE', 0),
+    // A question is one sentence. 256 covers the observed 9-25 token answers with
+    // room for a verbose one, and caps the damage if the model ignores the
+    // instruction and starts writing prose.
+    maxOutputTokens: num('TRANSLATION_MAX_TOKENS', 256),
+    /**
+     * Not `generation.repeatPenalty` (1.15), and deliberately so.
+     *
+     * That penalty exists to stop sarvam-1 falling into a repetition loop on a
+     * generation task. Here it would work against the requirement: penalising
+     * repeated tokens in a faithful translation discourages precisely the repeated
+     * standard codes, units and numerals this corpus is made of.
+     */
+    repeatPenalty: num('TRANSLATION_REPEAT_PENALTY', 1.0),
+    /**
+     * Not `OLLAMA_TIMEOUT_MS` (300s). A wedged translator should degrade to the
+     * "could not translate this" reply within a few seconds, not hold an open HTTP
+     * request for five minutes. The answering model is allowed to be slow because
+     * it is producing the answer; the translator is on the critical path of every
+     * non-English question and is otherwise measured at 0.5-2.8s.
+     */
+    timeoutMs: num('TRANSLATION_TIMEOUT_MS', 60_000),
   },
 
   /**
@@ -267,6 +337,28 @@ export const config = {
      */
     suggestionCount: num('SUGGESTION_COUNT', 6),
     /**
+     * How low a similarity can be and still be worth *naming a clause for*.
+     *
+     * Distinct from `bridgeFloor`, and the gap between the two is the point.
+     * `bridgeFloor` (0.45) answers "is there anything at all resembling this?" —
+     * everything above it is reachable. This answers the harder question: is this
+     * close enough that showing the user the clause helps rather than misleads?
+     *
+     * Measured out-of-corpus scores on this corpus run 0.466-0.708, so a clause
+     * surfaced as "the closest thing I have" can be a coincidence of vocabulary
+     * rather than a near miss. Observed directly: "tell me about the plastics"
+     * scored 0.5919 and produced cl. 7, *scratch depth 0.255 mm* — a table-scratch
+     * requirement, offered as the nearest neighbour to a question about plastic.
+     * That is worse than an honest "not covered", because it looks like a finding.
+     *
+     * So `bridgeFloor` still decides *which band* a result is in — the band is
+     * reported in `meta` and by /api/search, and nothing is hidden — while this
+     * threshold decides whether the bridge reply quotes the clause. Below it the
+     * user still gets a real reply with the question, the corpus coverage and
+     * clickable topics, just without a paragraph of unrelated text.
+     */
+    showNearestFrom: num('SHOW_NEAREST_FROM', 0.6),
+    /**
      * Reciprocal-rank-fusion weight for the keyword retriever.
      *
      * Hybrid retrieval runs the vector search and a Postgres full-text search and
@@ -303,6 +395,31 @@ export const config = {
 };
 
 export const SUPPORTED_LANGS = ['en', 'hi', 'pa', 'te'];
+
+/**
+ * The languages we can actually *translate into* English.
+ *
+ * A subset of `SUPPORTED_LANGS`, and the gap is deliberate: Punjabi is a supported
+ * interface language but not a translatable one. HY-MT1.5's published language list
+ * covers Hindi and Telugu and does not include Gurmukhi, and asking it to anyway
+ * does not fail loudly — it invents. Measured on `ਈੱਟ ਬਲਾਕ ਕੀ ਘਣੀ ਹੈ?`
+ * ("what is the density of iron?") it returned the fluent, confident and entirely
+ * unrelated *"Is it really necessary to have such a complicated system?"*. Zero
+ * Devanagari-class characters, so a script check passes it; retrieval then has
+ * nothing to work with. Excluding it here means Punjabi text is passed through
+ * untranslated instead, which retrieves no better but cannot be blamed on the
+ * translator.
+ *
+ * `SUPPORTED_LANGS` stays the full four because it governs which language the
+ * *reply* is written in, and Punjabi questions still get a Punjabi reply — the
+ * retrieval behind it is simply the same quality it has always been.
+ */
+export const TRANSLATABLE_LANGS = ['en', 'hi', 'te'];
+
+/** Whether a detected language can be translated into an English query. */
+export function isTranslatable(lang) {
+  return TRANSLATABLE_LANGS.includes(lang);
+}
 
 /** Whether a provider has the credentials it needs to be usable. */
 export function providerConfigured(which) {

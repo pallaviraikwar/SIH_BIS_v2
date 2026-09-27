@@ -542,14 +542,19 @@ export function tidyTitle(raw, truncated = false) {
     .replace(/\s{2,}/g, ' ')
     .trim();
 
-  // Drop a trailing revision note. SP 21 writes these inline
-  // ("...enamels (second revision)") and they are index metadata, not part of
-  // what the standard is about, so they make poor suggestions.
+  // Drop revision notes. SP 21 writes these inline — "...enamels (second
+  // revision)" — and they are index metadata, not part of what the standard is
+  // about, so they make poor suggestions.
   //
-  // Whether that strip succeeded matters below, so compare rather than assign
+  // Stripped anywhere in the title, not just at the end: when the 100-character
+  // cap lands mid-title the note is left stranded in the middle, e.g. "...
+  // supplies (first revision) Part I General".
+  //
+  // Whether the strip succeeded matters below, so compare rather than assign
   // blind.
   const withoutRevisionNote = t
-    .replace(/\s*\(\s*(?:first|second|third|fourth)?\s*revision\s*\)\s*$/i, '')
+    .replace(/\s*\(\s*(?:first|second|third|fourth|fifth)?\s*revision\s*\)/gi, '')
+    .replace(/\s{2,}/g, ' ')
     .trim();
   const hadRevisionNote = withoutRevisionNote !== t;
   t = withoutRevisionNote;

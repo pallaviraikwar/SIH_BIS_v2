@@ -59,12 +59,11 @@ function boot() {
   };
   const requests = [];
   const pending = [];
-  let langSelect = { value: 'en' };
-
   const doc = {
     getElementById: (id) => {
-      if (id === 'languageSelect') return langSelect;
-      // The i18n tables are read as textContent, the rest as elements.
+      // The i18n tables are read as textContent, the rest as elements. There is no
+      // languageSelect any more: the <select> was removed in favour of letting the
+      // server detect the script of the question, so nothing reads a chosen value.
       const table = I18N_TABLES[id.replace(/^i18n-/, '')];
       if (id.startsWith('i18n-')) return { textContent: table };
       return containers[id] || inputs[id] || makeEl();
@@ -100,7 +99,6 @@ function boot() {
     results: containers.searchResults,
     topics: containers.topicList,
     box: inputs.stdSearch,
-    setLang: (v) => { langSelect = { value: v }; },
     /** Simulates typing `text` one character at a time. */
     type(text) {
       this.box.value = '';
@@ -239,19 +237,45 @@ test('the topic list is read from the index, and an empty index is not a crash',
   assert.equal(p.topicCalls().length, first, 'a failed topic fetch must not retry in a loop');
 });
 
-test('switching language re-labels the panel without another search', async () => {
+test('relabelling the panel does not spend an embedding call', async () => {
+  // Was "switching language re-labels the panel without another search", back when
+  // a <select> drove the language. The assertion is unchanged and still load-bearing:
+  // applyLanguage touches labels only. It used to be a real hazard because it called
+  // loadTopics() and loadHealth() to refresh sidebar text after a manual switch, and
+  // this test is what noticed that those calls doubled. It now calls neither, so the
+  // guarantee is structural — but pinning it keeps it that way.
   const p = boot();
   p.type('fees');
   await settle();
   p.searchPending().resolve(ok({ results: [PASSAGE] }));
   await wait(20);
   const searches = p.searchCalls().length;
+  const topics = p.topicCalls().length;
 
-  p.setLang('hi');
-  p.sandbox.setLanguage('hi');
+  p.sandbox.applyLanguage('hi');
   await wait(20);
 
-  assert.equal(p.searchCalls().length, searches, 'language switch must not spend an embedding call');
+  assert.equal(p.searchCalls().length, searches, 'relabelling must not spend an embedding call');
+  assert.equal(p.topicCalls().length, topics, 'relabelling must not refetch the sidebar');
+  assert.equal(p.sandbox.document.documentElement.lang, 'hi', 'the document language should follow');
+});
+
+test('the language <select> is gone and a static hint replaced it', () => {
+  // The dropdown was the only way to make the interface speak your language, and it
+  // had to be found first. Detection from the query removed the need for it, so its
+  // return would be a regression to a worse design.
+  assert.ok(!html.includes('languageSelect'), 'the language <select> is back');
+  // Matched as a declaration or a call, not a bare substring: the function's own
+  // doc comment still names setLanguage when explaining what it replaced.
+  assert.ok(
+    !/function\s+setLanguage|onchange="setLanguage/.test(html),
+    'setLanguage is back; the app should drive applyLanguage'
+  );
+  assert.match(html, /function applyLanguage\(/, 'applyLanguage should be what switches the labels');
+  assert.match(html, /Ask in any language/, 'the hint advertising multilingual input is missing');
+  // The request must not carry a pinned language, or detection is overridden by
+  // whatever the client last displayed — the original bug.
+  assert.match(html, /lang: 'auto'/);
 });
 
 test('contains no hardcoded standard data', () => {

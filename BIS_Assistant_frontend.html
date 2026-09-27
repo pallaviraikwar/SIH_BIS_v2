@@ -44,6 +44,13 @@
     header .sub { font-size: 13px; color: var(--ink-faint); margin-top: 2px; }
     .head-right { display: flex; align-items: center; gap: 14px; }
     .runtime { font-size: 12px; color: var(--ink-faint); text-align: right; line-height: 1.4; }
+    /* Static, non-interactive hint. Deliberately not a <select>: there is nothing
+       to choose, because the language follows the question. */
+    .anylang {
+        font-size: 12px; color: var(--ink-faint); text-align: right;
+        margin-top: 2px; padding: 2px 8px; border: 1px solid var(--line, #e2e8f0);
+        border-radius: 4px; white-space: nowrap;
+    }
     select {
         font: inherit; font-size: 13px; padding: 5px 8px;
         border: 1px solid var(--rule); border-radius: 3px;
@@ -187,12 +194,12 @@
     </div>
     <div class="head-right">
         <div class="runtime" id="runtimeLine"></div>
-        <select id="languageSelect" onchange="setLanguage(this.value)">
-            <option value="en">English</option>
-            <option value="hi">हिन्दी</option>
-            <option value="pa">ਪੰਜਾਬੀ</option>
-            <option value="te">తెలుగు</option>
-        </select>
+        <!-- No language selector. It existed only to drive the i18n tables below,
+             and it had to be found before the interface would speak your language.
+             The server now detects the script of what you type and reports it back
+             in meta.lang, which switches these tables automatically, so the hint
+             only has to advertise a capability that actually works. -->
+        <div class="anylang" title="Hindi · Telugu · English">Ask in any language</div>
     </div>
 </header>
 
@@ -439,7 +446,12 @@ async function send() {
         const res = await fetch(API_BASE + '/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: text, lang }),
+            // 'auto', not `lang`. The server reads the script of the text itself, so
+            // a Hindi question is translated and answered in Hindi whatever this
+            // client last displayed. Sending the current UI language instead is what
+            // made a Hindi question sent against the default `lang: 'en'` skip
+            // translation altogether.
+            body: JSON.stringify({ query: text, lang: 'auto' }),
         });
         const data = await res.json();
 
@@ -450,6 +462,13 @@ async function send() {
         }
 
         const m = data.meta || {};
+
+        // Follow the language actually used. The server answers in the script of the
+        // question, so the interface should agree with the reply it just rendered —
+        // otherwise a Hindi answer arrives wrapped in an English panel. Guarded on
+        // difference so the common case (same language) touches no DOM.
+        if (m.lang && m.lang !== lang) applyLanguage(m.lang);
+
         // Four genuinely different outcomes, previously all rendered as the same
         // plain bubble: the user could not tell a refusal from an outage.
         let tag = 'tagAnswer';
@@ -592,7 +611,22 @@ async function loadHealth() {
     }
 }
 
-function setLanguage(next) {
+/**
+ * Swap the interface language.
+ *
+ * This used to be `setLanguage(next)` and was only ever called by the language
+ * <select>, which meant the interface spoke your language only if you went looking
+ * for the dropdown first. There is no dropdown now: the server detects the script
+ * of the question, answers in it, and returns it in `meta.lang`, and this is
+ * called from the response handler when that differs from what is on screen.
+ *
+ * The `loadTopics`/`loadHealth` calls that used to be in here are gone. They
+ * existed only to re-label the sidebar after a manual switch, and they were the
+ * reason `test/directory.test.js` had to assert that changing language does not
+ * spend an embedding call. Topics are data rather than labels, so relabelling
+ * cannot invalidate them and nothing needs re-fetching.
+ */
+function applyLanguage(next) {
     lang = LANGS.includes(next) ? next : 'en';
     document.documentElement.lang = lang;
     document.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -607,14 +641,17 @@ function setLanguage(next) {
     document.getElementById('stdSearch').placeholder = t('searchPlaceholder');
     // Relabelling the search box invalidates whatever it was showing.
     if (!document.getElementById('stdSearch').value.trim()) dirNote(t('directoryHint'));
-    loadTopics();
-    loadHealth();
     input.focus();
 }
 
-// setLanguage already fetches topics and health, so calling them again here
-// doubled every request on first paint and on each language switch.
-setLanguage('en');
+// First paint. Topics and health are loaded here rather than from inside
+// applyLanguage: they were only ever fetched from there to relabel the sidebar
+// after a manual language switch, and with detection driving the language there is
+// no manual switch to relabel for. Fetching once, here, is also what stops the
+// startup doubling where these ran twice on first paint.
+applyLanguage('en');
+loadTopics();
+loadHealth();
 emptyState();
 </script>
 </body>

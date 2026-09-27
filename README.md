@@ -31,6 +31,9 @@ the search — answer / soft / bridge / miss — because the in-corpus and
 out-of-corpus score distributions overlap on this corpus and no single threshold
 can separate them. See [Three retrieval bands](#three-retrieval-bands).
 
+For a plain-language walkthrough of the whole pipeline, the bugs found in it, and
+the changes being made, see **[doc/architecture.md](doc/architecture.md)**.
+
 ## Setup
 
 ```bash
@@ -255,8 +258,12 @@ that a burst of keystrokes costs one embedding call, that a late response cannot
 overwrite a newer one, that document text is escaped before `innerHTML`, and
 that no hardcoded standard codes creep back in.
 
-It costs API quota — several `generateContent` calls — so it will fail on the
-free tier's ~20-per-day generation cap. Run it deliberately, not in a loop.
+`test/retrieval.test.js` covers the banding and fusion logic directly — the band
+boundaries, the RRF order, identifier promotion for a bare `IS 456`, and the
+clause-title repair. It runs in-process with no model calls.
+
+Neither suite costs API quota. Both talk only to local models, so they can be run
+in a loop; the e2e suite is the slow one because it loads and runs real models.
 
 ## Known limitations
 

@@ -67,6 +67,39 @@ test('every measured band boundary is inclusive on the right side', () => {
   }
 });
 
+test('showNearestFrom sits above the bridge floor and inside the soft band', () => {
+  // The two thresholds answer different questions and both are needed.
+  // `bridgeFloor` asks "is anything resembling this reachable at all?" and
+  // `showNearestFrom` asks "is it close enough that quoting the clause helps?".
+  const { bridgeFloor, softThreshold, showNearestFrom } = config.retrieval;
+  assert.ok(showNearestFrom > bridgeFloor, 'nothing to suppress in the bridge band otherwise');
+  assert.ok(
+    showNearestFrom <= softThreshold,
+    'a soft-band question the model declines must still be able to show its clause'
+  );
+});
+
+test('a bridge result below showNearestFrom would not quote a clause', () => {
+  // The observed case this exists for: "tell me about the plastics" scored 0.5919
+  // and was answered with a table-scratch requirement, offered as the closest thing
+  // the index had. Out-of-corpus questions here measure 0.466-0.708, so a clause
+  // quoted from inside that range is a coincidence of vocabulary, not a near miss.
+  assert.equal(bandFor(0.5919), 'bridge', 'the failing case was in the bridge band');
+  assert.ok(
+    0.5919 < config.retrieval.showNearestFrom,
+    'a score inside the measured out-of-corpus range must not be quoted as a near match'
+  );
+});
+
+test('a real near miss above showNearestFrom would still quote its clause', () => {
+  // The suppression must not throw away the genuinely useful case. A soft-band hit
+  // the model declines is the one situation where naming the clause is informative,
+  // and it scores at or above showNearestFrom.
+  assert.equal(bandFor(config.retrieval.softThreshold), 'soft');
+  assert.ok(config.retrieval.softThreshold >= config.retrieval.showNearestFrom);
+  assert.ok(config.retrieval.showNearestFrom >= config.retrieval.softThreshold - 0.05);
+});
+
 /* ------------------------------------------------------------------ *
  * Lookup fragments
  * ------------------------------------------------------------------ */
@@ -213,6 +246,24 @@ test('a revision note is dropped', () => {
   assert.equal(
     tidyTitle('Specification for fabricated PVC fittings (first revision)', false),
     'Specification for fabricated PVC fittings'
+  );
+});
+
+test('a revision note stranded mid-title by the cap is dropped too', () => {
+  // The 100-character cap can land in the middle of a title, leaving the note
+  // stranded well before the end. It is still index metadata.
+  assert.equal(
+    tidyTitle('Specification for fabricated PVC fitting water supplies (first revision) Part I General', true),
+    'Specification for fabricated PVC fitting water supplies Part I General'
+  );
+});
+
+test('a mid-title parenthetical that is not a revision note is kept', () => {
+  // "(including ...)" is real title text; stripping every bracket would quietly
+  // rewrite the catalogue. Uncapped, so no repair runs at all.
+  assert.equal(
+    tidyTitle('Specification for clay pipes (including socketed pipes) Part 1', false),
+    'Specification for clay pipes (including socketed pipes) Part 1'
   );
 });
 

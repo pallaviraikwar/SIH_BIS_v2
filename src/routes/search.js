@@ -21,9 +21,19 @@ searchRouter.get('/search', async (req, res) => {
     : config.retrieval.threshold;
 
   try {
-    const { query, passages, topSimilarity, band } = await searchOnly(q, { topK, threshold });
+    // `lang` is optional and defaults to auto-detection from the query text, so
+    // /api/search and /api/chat now decide what a query means the same way. It
+    // previously accepted no language at all, while `searchOnly` hardcoded 'en' —
+    // which meant a Devanagari query here was silently mistranslated into nothing
+    // and the endpoint reported a band for a search the answer path would never
+    // have run. Pass ?lang=hi to override, exactly as with /api/chat.
+    const { query, originalQuery, lang, translated, passages, topSimilarity, band } =
+      await searchOnly(q, { topK, threshold, lang: req.query.lang });
     return res.json({
       query,
+      originalQuery,
+      lang,
+      translated,
       topK,
       threshold,
       // Which band the answer path would have chosen, and the score it decided on.
