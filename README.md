@@ -9,6 +9,38 @@ Everything runs on your own machine. Generation and embedding are both local
 models, so there is no API key, no network dependency and no quota to run out of
 mid-demo.
 
+## Quick start
+
+```bash
+git clone https://github.com/pallaviraikwar/SIH_BIS_v2.git
+cd SIH_BIS_v2
+
+./scripts/ollama-host-setup.sh     # once; asks for your sudo password
+./run.sh
+```
+
+Then open **http://localhost:3000**.
+
+The repository ships the corpus — five BIS PDFs and a prepared index of 5,063
+chunks — so there is nothing to download and nothing to ingest.
+
+### What to expect
+
+| | |
+| --- | --- |
+| `./scripts/ollama-host-setup.sh` | Pulls **4.6 GB** of model weights. Seconds if you already have them, otherwise however long that takes on your connection. The only step needing `sudo`. |
+| first `./run.sh` | Builds the app image once: ~10 s if `node:22-slim` is already cached, longer on a machine that never has. |
+| every later `./run.sh` | **~25 s** to a working app, restoring the prepared index rather than re-embedding. |
+| answering a question | ~10–20 s. Generation is a 2B model on CPU. |
+
+`./scripts/ollama-host-setup.sh --check` prints what is present and changes
+nothing; it must exit 0. That step cannot be skipped or worked around, and the
+symptom of skipping it is a healthy `/api/health` followed by every answer
+failing — see [Models on the host](#models-on-the-host).
+
+`.env` is not in the commands because you should not create it. `run.sh` makes it
+from `.env.example`, and every default is local, so there is no key to add.
+
 ## Prerequisites
 
 - **Docker**, with Compose **v2.24.0 or later**. Not just any v2: `docker-compose.yml`
@@ -39,8 +71,7 @@ docker ps              # must now work without sudo
 
 ## Install and run
 
-This repository ships a corpus, so a clone can answer questions and open
-citations immediately:
+What ships in the clone, and why:
 
 - **`data/pdfs/`** — five BIS documents, 17 MB
 - **`index-snapshots/`** — the matching prepared index, 19 MB
@@ -52,14 +83,6 @@ different set of documents.
 
 If you would rather start from your own standards, replace `data/pdfs/` and run
 `./run.sh --no-snapshot` to ingest them from scratch.
-
-### One command
-
-```bash
-git clone https://github.com/pallaviraikwar/SIH_BIS_v2.git
-cd SIH_BIS_v2
-./run.sh
-```
 
 `run.sh` does the whole first run: checks Docker and Ollama, creates `.env`, builds
 and starts the two containers, **waits for each one to actually be ready** rather
@@ -83,8 +106,6 @@ the stack is up while Postgres is still initialising, and not noticing that port
 | `./run.sh --skip-ingest` | bring the stack up and stop there |
 | `./run.sh --import-snapshot` | only load a prepared index, never fall back to ingest |
 | `./run.sh --no-snapshot` | ignore `index-snapshots/` and ingest from the PDFs |
-
-Then open **http://localhost:3000**.
 
 ### Doing it by hand
 
@@ -298,6 +319,12 @@ page index**, not the folio printed in the footer, so the two can disagree; the
 panel says so too.
 
 ## Troubleshooting
+
+**`./run.sh` exits with "start Ollama first, then re-run."** You skipped
+`./scripts/ollama-host-setup.sh`, which is the one step in the quick start that
+cannot be worked around. It pulls the models and makes the Ollama daemon
+reachable from the container. Run it, then re-run `./run.sh`; nothing you have
+already done is lost.
 
 **`docker ps` gives a permission error.** You are not in the `docker` group — see
 Prerequisites. Nothing in this project will work until that is fixed.
